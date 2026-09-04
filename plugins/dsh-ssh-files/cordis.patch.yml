@@ -1,0 +1,18 @@
+# dsh-ssh-files bundle patch: one optional row. Applied only when this bundle
+# joins a profile's layer stack (`dsh plugin --profile <name> add ...`); the
+# shipped dsh-base and dsh-web-app bundles never carry it, so harness updates
+# cannot turn it on or off.
+#
+# readMaxBytes / connectTimeoutMs / writeMaxChars / readMaxLines / execMaxChars
+# are deployment-varying tunables, so they are Config fields (never hardcoded):
+# override them in a later patch layer or the profile's own cordis.patch.yml
+# when a deployment needs different limits.
+- insert:
+    - id: ssh-files
+      name: '@deepseek-ai/dsh-ssh-files'
+      config:
+        readMaxBytes: 1048576
+        connectTimeoutMs: 15000
+        writeMaxChars: 200000
+        readMaxLines: 2000
+        execMaxChars: 20000

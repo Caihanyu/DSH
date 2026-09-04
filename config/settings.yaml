@@ -1,0 +1,10 @@
+ui-onboarding:
+  welcomeNoticeVersion: 2026-08-13.1
+agent-presets:
+  default: dsh-anchored-subagent
+agent-default-model:
+  provider: deepseek-official
+  model: deepseek-v4-flash-vision-exp
+  reasoningEffort: high
+ui-theme:
+  preference: system

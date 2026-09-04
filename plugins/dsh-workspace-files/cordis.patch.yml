@@ -1,0 +1,14 @@
+# dsh-workspace-files bundle patch: one optional row. Applied only when this
+# bundle joins a profile's layer stack (`dsh plugin --profile <name> add ...`);
+# the shipped dsh-base and dsh-web-app bundles never carry it, so harness
+# updates cannot turn it on or off.
+#
+# The openers are deployment-varying executables, so they are Config fields
+# (never hardcoded): override them in a later patch layer or the profile's own
+# cordis.patch.yml when `code`/`marktext` are not on PATH.
+- insert:
+    - id: workspace-files
+      name: '@deepseek-ai/dsh-workspace-files'
+      config:
+        code: code
+        marktext: marktext
