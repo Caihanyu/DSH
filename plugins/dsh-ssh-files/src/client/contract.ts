@@ -67,12 +67,8 @@ export interface SshListing {
   entries: SshFileEntry[]
 }
 
-/** The details-panel inject face: layout orchestration plus all RPC calls. */
+/** The sidebar-tab inject face: all RPC calls this plugin's host route serves. */
 export interface SshFilesInjected {
-  /** Open the details column (layout orchestration). */
-  openDetails: () => void
-  /** Close the details column (layout orchestration). */
-  closeDetails: () => void
   /** Read the panel state of one session (mode, servers, connection). */
   getState: (sessionId: string, signal?: AbortSignal) => Promise<SshStateResponse>
   /** Switch one session's working mode (also remembered as the default). */
@@ -107,8 +103,8 @@ export interface SshFilesInjected {
   openLocalMarktext: (path: string) => Promise<void>
 }
 
-/** Composed props of the ssh-files details panel. */
+/** Composed props of the ssh-files sidebar tab body. */
 export type SshFilesPanelProps =
-  & PropsRuntime<'details'>
+  & PropsRuntime<'sidebar.right.pane.tab'>
   & PropsLocale<'ssh-files'>
   & SshFilesInjected

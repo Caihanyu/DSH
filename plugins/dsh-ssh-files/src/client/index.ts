@@ -1,16 +1,18 @@
 /**
- * `dsh-ssh-files` browser half: occupies the layout's `details` slot with the
- * mode-switching file panel (local workspace ↔ connected SSH server). Registers
- * at a priority below the shipped DetailsPanel and `dsh-workspace-files` so it
- * renders first without removing them — the shadowed entries keep their child
- * slot declarations live. Every RPC call carries the panel's session id, so
- * the panel always reflects and drives its own conversation's SSH state.
+ * `dsh-ssh-files` browser half: registers the right Sidebar's `ssh-files` tab
+ * type — a page type reached from the sidebar guide whose body connects one
+ * session to an SSH server and browses it. The shipped workspace tree owns the
+ * local half of the story, so this panel is SSH-only. Every route call carries
+ * the panel's session id, so the panel always reads and drives its own
+ * conversation's SSH state.
  */
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-// Type-only: pulls the locale and layout Context merges (ctx.locale / ctx.layout).
+import type { ClientContext } from '@deepseek-ai/cordis'
+import { IconFolderClose16 } from '@deepseek-ai/dsh-client-ui-primitives'
+// Type-only: pulls the locale, slots, sidebar-right, and workspace Context merges.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { SshFilesPanel } from './panel.tsx'
 import type {
   SshFilesInjected, SshListing, SshServer, SshStateResponse,
@@ -25,7 +27,7 @@ export type { SshFilesKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** The ssh-files details panel copy. */
+    /** The ssh-files sidebar tab copy. */
     'ssh-files': SshFilesKey
   }
 }
@@ -111,68 +113,101 @@ function parseRead(value: unknown): string {
   return content
 }
 
-/** Call one `/ssh-files` endpoint for one session, throwing on failure. */
-async function rpcCall(
-  connection: ConnectionHandle, sessionId: string, endpoint: string,
+/** The route this plugin's host half mounts on the app's HTTP server. */
+const ROUTE_PATH = '/ssh-files'
+
+/**
+ * Call one `/ssh-files` endpoint, throwing the host's message on failure.
+ * @param sessionId - the session whose state the call reads or drives.
+ * @param endpoint - route-relative endpoint name.
+ * @param payload - endpoint-owned request payload.
+ * @param signal - caller cancellation.
+ * @returns the endpoint's response value.
+ */
+async function callRoute(
+  sessionId: string, endpoint: string,
   payload: Record<string, unknown>, signal?: AbortSignal,
 ): Promise<unknown> {
-  const response = await connection.rpc.call(
-    RPC_CHANNEL, endpoint, { ...payload, sessionId }, signal,
-  )
-  if (!response.ok) throw new Error(response.error.message)
-  return response.value
+  const response = await fetch(`${ROUTE_PATH}/${endpoint}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...payload, sessionId }),
+    ...(signal === undefined ? {} : { signal }),
+  })
+  if (!response.ok) throw new Error(`ssh-files: ${endpoint} failed with HTTP ${response.status}`)
+  const result = await response.json() as { ok?: unknown, value?: unknown, error?: { message?: unknown } }
+  if (result.ok !== true) {
+    const message = typeof result.error?.message === 'string'
+      ? result.error.message
+      : `ssh-files: ${endpoint} failed`
+    throw new Error(message)
+  }
+  return result.value
 }
 
 /**
- * Required services (cordis fiber inject): the slot registry, the layout
- * panel face, the workspaces runtime (default-app open), the connection
- * transport, and the locale service.
+ * Required services (cordis fiber inject): the slot registry, the locale
+ * service, the right-Sidebar tab-type registry, and the workspace navigation
+ * face (opening a new conversation on a server). Route calls ride the page's
+ * own `fetch`, so the connection transport needs no injection here.
  */
-export const inject = ['slots', 'layout', 'workspaces', 'connection', 'locale']
+export const inject = ['slots', 'locale', 'sidebarRightTabs', 'uiWorkspace']
+
+/** This implementation's identity in the tab system, and the key its body registers under. */
+const TAB_ID = '@deepseek-ai/dsh-ssh-files'
+
+/** The page kind the guide entry opens. */
+const TAB_KIND = 'ssh-files'
 
 /**
- * Register the mode-switching file panel once the layout's `details`
- * declaration is on the ledger. The inject face closes over `ctx`, so the
- * RPC calls stay live for the registration's whole lifetime.
+ * Register the tab type, its dictionary, and its body on the right Sidebar's
+ * keyed seat. The inject face closes over `ctx`, so the route calls stay live
+ * for the registration's whole lifetime.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  const connection = ctx.get('connection') as ConnectionHandle
+  const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ssh-files: dictionaries')
-  ctx.slots.inject('details', () => ctx.slots.register({
-    name: 'details',
-    // Below the shipped DetailsPanel (0) and dsh-workspace-files (-1): the
-    // lowest-priority entry renders, and the shadowed entries' child-slot
-    // declarations stay live.
-    priority: -2,
+  ctx.effect(() => ctx.sidebarRightTabs.register({
+    id: TAB_ID,
+    kind: TAB_KIND,
+    title: () => t('tab.title'),
+    guide: [{
+      order: 30,
+      title: () => t('tab.title'),
+      description: () => t('guide.description'),
+      icon: IconFolderClose16,
+    }],
+  }), 'ssh-files: tab type')
+  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+    name: 'sidebar.right.pane.tab',
+    key: TAB_ID,
     locale: NS,
     inject: (): SshFilesInjected => ({
-      openDetails: () => { ctx.layout.openDetails() },
-      closeDetails: () => { ctx.layout.closeDetails() },
-      getState: (sessionId, signal) => rpcCall(connection, sessionId, 'get-state', {}, signal).then(parseStateResponse),
-      setMode: (sessionId, mode) => rpcCall(connection, sessionId, 'set-mode', { mode }).then(parseStateResponse),
-      addServer: (sessionId, input) => rpcCall(connection, sessionId, 'add-server', input as unknown as Record<string, unknown>).then(parseStateResponse),
-      updateServer: (sessionId, id, input) => rpcCall(connection, sessionId, 'update-server', { id, server: input }).then(parseStateResponse),
-      removeServer: (sessionId, id) => rpcCall(connection, sessionId, 'remove-server', { id }).then(parseStateResponse),
-      connect: (sessionId, id, signal) => rpcCall(connection, sessionId, 'connect', { id }, signal).then(parseStateResponse),
-      disconnect: sessionId => rpcCall(connection, sessionId, 'disconnect', {}).then(parseStateResponse),
-      list: (sessionId, path, signal) => rpcCall(connection, sessionId, 'list', { path }, signal).then(parseListing),
-      read: (sessionId, path, signal) => rpcCall(connection, sessionId, 'read', { path }, signal).then(parseRead),
-      write: (sessionId, path, content) => rpcCall(connection, sessionId, 'write', { path, content }).then(() => undefined),
-      mkdir: (sessionId, path) => rpcCall(connection, sessionId, 'mkdir', { path }).then(() => undefined),
-      unlink: (sessionId, path) => rpcCall(connection, sessionId, 'unlink', { path }).then(() => undefined),
+      getState: (sessionId, signal) => callRoute(sessionId, 'get-state', {}, signal).then(parseStateResponse),
+      setMode: (sessionId, mode) => callRoute(sessionId, 'set-mode', { mode }).then(parseStateResponse),
+      addServer: (sessionId, input) => callRoute(sessionId, 'add-server', input as unknown as Record<string, unknown>).then(parseStateResponse),
+      updateServer: (sessionId, id, input) => callRoute(sessionId, 'update-server', { id, server: input }).then(parseStateResponse),
+      removeServer: (sessionId, id) => callRoute(sessionId, 'remove-server', { id }).then(parseStateResponse),
+      connect: (sessionId, id, signal) => callRoute(sessionId, 'connect', { id }, signal).then(parseStateResponse),
+      disconnect: sessionId => callRoute(sessionId, 'disconnect', {}).then(parseStateResponse),
+      list: (sessionId, path, signal) => callRoute(sessionId, 'list', { path }, signal).then(parseListing),
+      read: (sessionId, path, signal) => callRoute(sessionId, 'read', { path }, signal).then(parseRead),
+      write: (sessionId, path, content) => callRoute(sessionId, 'write', { path, content }).then(() => undefined),
+      mkdir: (sessionId, path) => callRoute(sessionId, 'mkdir', { path }).then(() => undefined),
+      unlink: (sessionId, path) => callRoute(sessionId, 'unlink', { path }).then(() => undefined),
       // Open the current workspace's New-Session view on this server: connect
       // first (also records it as the session default), then start a session,
       // which inherits that default (reusing the workspace's blank session
       // when one exists, per core semantics) and the panel auto-connects on
       // mount.
       openNewSessionOn: async (serverId) => {
-        await rpcCall(connection, '', 'connect', { id: serverId })
-        ctx.workspaces.startSession()
+        await callRoute('', 'connect', { id: serverId })
+        ctx.uiWorkspace.startSession()
       },
-      openLocalDefault: path => ctx.workspaces.openPath(path),
-      openLocalCode: path => rpcCall(connection, '', 'open-local', { path, command: 'code' }).then(() => undefined),
-      openLocalMarktext: path => rpcCall(connection, '', 'open-local', { path, command: 'marktext' }).then(() => undefined),
+      openLocalDefault: path => callRoute('', 'open-local', { path, command: 'default' }).then(() => undefined),
+      openLocalCode: path => callRoute('', 'open-local', { path, command: 'code' }).then(() => undefined),
+      openLocalMarktext: path => callRoute('', 'open-local', { path, command: 'marktext' }).then(() => undefined),
     }),
-  }, SshFilesPanel))
+  }, SshFilesPanel)), 'ssh-files: tab body')
 }

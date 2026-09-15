@@ -8,11 +8,11 @@
  * @module @deepseek-ai/dsh-ssh-files
  */
 
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
-import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
-import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { runNativeCommand } from '@deepseek-ai/dsh-native-command'
 import z from '@deepseek-ai/schemastery'
 import { SshSessionStore, type SessionKey } from './store.ts'
@@ -160,19 +160,74 @@ async function runOpener(command: string, path: string, signal: AbortSignal): Pr
   }
 }
 
+/** The absolute route path this plugin owns on the app's HTTP server. */
+const ROUTE_PATH = '/ssh-files'
+
+/** Largest request body this route accepts (file writes are the big case). */
+const MAX_BODY_BYTES = 32 * 1024 * 1024
+
 /**
- * Mount the `/ssh-files` RPC channel and register the `ssh_*` tools.
+ * Open one path with the operating system's default application. Windows
+ * resolves both files and directories through the shell's association, so
+ * `Start-Process` covers the whole path space there; macOS and Linux use the
+ * platform opener.
+ * @param path - absolute host path to open.
+ * @param signal - caller cancellation.
+ */
+async function openWithDefaultApp(path: string, signal: AbortSignal): Promise<void> {
+  if (process.platform === 'win32') {
+    await runNativeCommand(
+      'powershell.exe',
+      ['-NoProfile', '-Command', `Start-Process -FilePath ${powershellLiteral(path)}`],
+      signal,
+    )
+    return
+  }
+  await runNativeCommand(process.platform === 'darwin' ? 'open' : 'xdg-open', [path], signal)
+}
+
+/** Read one bounded JSON request body; `undefined` for an empty body. */
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of request) {
+    const buffer = chunk as Buffer
+    size += buffer.length
+    if (size > MAX_BODY_BYTES) throw new Error('request body exceeds the route limit')
+    chunks.push(buffer)
+  }
+  if (chunks.length === 0) return undefined
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+}
+
+/** Write one JSON response, owning its content length. */
+function writeJson(response: ServerResponse, status: number, body: unknown): void {
+  if (response.writableEnded || response.destroyed) return
+  const payload = JSON.stringify(body)
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(payload),
+  })
+  response.end(payload)
+}
+
+/**
+ * Mount the `/ssh-files` HTTP route and register the `ssh_*` tools.
  *
- * RPC endpoints (every state/fs endpoint takes the session id in `payload`,
- * so each conversation panel reads and drives only its own session):
+ * Route endpoints (each a JSON POST whose response is `{ ok: true, value }` or
+ * `{ ok: false, error: { message } }`; every state/fs endpoint takes the
+ * session id in its payload, so each conversation panel reads and drives only
+ * its own session):
  * - `get-state` / `set-mode` / `add-server` / `update-server` / `remove-server`
  *   / `connect` / `disconnect` — per-session state and the shared server pool.
  * - `list` / `read` / `write` / `mkdir` / `unlink` — mode-aware file operations
  *   for the calling session.
  * - `open-local` — open a local path in a desktop app (local mode only).
  *
- * The channel is loopback-only (the same trust fence as every `/api` request).
- * @param ctx - cordis context carrying `connection`, `tools`, and `systemPrompt`.
+ * The route sits behind the connection service's Host/Origin fence and
+ * browser-session check — the same policy every `/api` request carries — and
+ * declares `webServer` because the route table lives on that service.
+ * @param ctx - cordis context carrying `tools` and `systemPrompt`.
  * @param config - validated read caps, timeouts, and desktop openers.
  */
 export function apply(ctx: Context, config: Config): void {
@@ -189,7 +244,9 @@ export function apply(ctx: Context, config: Config): void {
     execMaxChars: resolved.execMaxChars,
   })
 
-  const handler: ConnectionRpcHandler = async (endpoint, payload, signal) => {
+  const handler = async (
+    endpoint: string, payload: unknown, signal: AbortSignal,
+  ): Promise<{ ok: true, value: unknown } | { ok: false, error: { code: string, message: string, details: Record<string, unknown> } }> => {
     try {
       const session = sessionKeyOf(payload)
       switch (endpoint) {
@@ -257,12 +314,15 @@ export function apply(ctx: Context, config: Config): void {
           const path = parseStringField(record, 'path')
           const command = record.command
           if (path === undefined) throw new Error('缺少文件路径')
-          if (command !== 'code' && command !== 'marktext') throw new Error('缺少打开方式')
-          await runOpener(
-            command === 'code' ? resolved.code : resolved.marktext,
-            path,
-            signal,
-          )
+          if (command !== 'code' && command !== 'marktext' && command !== 'default') throw new Error('缺少打开方式')
+          if (command === 'default') await openWithDefaultApp(path, signal)
+          else {
+            await runOpener(
+              command === 'code' ? resolved.code : resolved.marktext,
+              path,
+              signal,
+            )
+          }
           return { ok: true, value: { opened: true as const } }
         }
         default:
@@ -276,8 +336,57 @@ export function apply(ctx: Context, config: Config): void {
       return { ok: false, error: { code: 'internal', message, details: {} } }
     }
   }
-  ctx.effect(
-    () => ctx.connection.rpc.handle('/ssh-files', handler, { authority: 'loopback' }),
-    'ssh-files: rpc channel',
-  )
+  ctx.inject(['webServer', 'connection'], (webCtx) => {
+    /** Settle one endpoint call into the route's JSON envelope. */
+    const settle = (
+      response: ServerResponse,
+      status: number,
+      result: { ok: true, value: unknown } | { ok: false, message: string },
+    ): void => {
+      writeJson(response, status, result.ok
+        ? { ok: true, value: result.value }
+        : { ok: false, error: { message: result.message } })
+    }
+
+    const route: WebRoute = {
+      kind: 'prefix',
+      path: ROUTE_PATH,
+      handler: async (request, response) => {
+        const rejection = webCtx.connection.requestRejection(request)
+        if (rejection !== undefined) {
+          response.writeHead(rejection)
+          response.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+          return
+        }
+        if (request.method !== 'POST') {
+          settle(response, 405, { ok: false, message: 'ssh-files: this route accepts POST only' })
+          return
+        }
+        const endpoint = new URL(request.url ?? '/', 'http://127.0.0.1')
+          .pathname.slice(ROUTE_PATH.length + 1)
+        let payload: unknown
+        try {
+          payload = await readJsonBody(request)
+        } catch (error) {
+          settle(response, 400, {
+            ok: false,
+            message: `ssh-files: malformed request body: ${error instanceof Error ? error.message : String(error)}`,
+          })
+          return
+        }
+        // A client that goes away aborts the work in flight (a listing or
+        // transfer the user navigated away from is the case that matters).
+        const controller = new AbortController()
+        response.once('close', () => {
+          if (!response.writableEnded) controller.abort()
+        })
+        const result = await handler(endpoint, payload, controller.signal)
+        settle(response, result.ok ? 200 : 500, result.ok
+          ? { ok: true, value: result.value }
+          : { ok: false, message: result.error.message })
+      },
+    }
+
+    webCtx.effect(() => webCtx.webServer.register(route), 'ssh-files: route')
+  })
 }

@@ -2,9 +2,8 @@
  * FileTree: the panel's lazy, expandable directory tree. Rows load one
  * directory level at a time through the injected `list` (abort-guarded),
  * directories expand on click, files open the editor through `onOpenFile`.
- * A per-row menu offers local-mode desktop openers (VS Code / MarkText /
- * default app), create-in-directory, and delete. A leading ".." row navigates
- * to the parent directory, so the tree is not confined to its root.
+ * A per-row menu offers create-in-directory and delete. A leading ".." row
+ * navigates to the parent directory, so the tree is not confined to its root.
  */
 
 import { useMemo, useState } from 'react'
@@ -17,20 +16,16 @@ import css from './SshFilesPanel.module.css'
 
 /** Props the panel passes to the tree. */
 export interface FileTreeProps {
-  /** Absolute root of the tree (session cwd in local mode, server root in ssh mode). */
+  /** Absolute root of the tree (the connected server's root). */
   root: string
   /** List one directory level on the active filesystem. */
   list: (path: string, signal?: AbortSignal) => Promise<SshListing>
-  /** The working mode: local rows get desktop openers, ssh rows do not. */
-  mode: 'local' | 'ssh'
   /** Open a file in the panel's editor. */
   onOpenFile: (path: string) => void
   /** Open the create-file/dir modal for one directory. */
   onCreate: (dirPath: string, kind: 'file' | 'dir') => void
   /** Request deletion of one entry. */
   onDelete: (entry: SshFileEntry) => void
-  /** Open a local file in a desktop app (local mode only). */
-  onOpenLocal: (path: string, app: 'code' | 'marktext' | 'default') => Promise<void>
   /** Localized copy. */
   t: SshFilesTranslate
 }
@@ -70,17 +65,15 @@ function FileGlyph({ kind }: { kind: 'dir' | 'file' }) {
 
 /** The recursive row: one entry with expansion/actions. */
 function TreeRow({
-  entry, depth, list, mode, showHidden, onOpenFile, onCreate, onDelete, onOpenLocal, t,
+  entry, depth, list, showHidden, onOpenFile, onCreate, onDelete, t,
 }: {
   entry: SshFileEntry
   depth: number
   list: FileTreeProps['list']
-  mode: FileTreeProps['mode']
   showHidden: boolean
   onOpenFile: FileTreeProps['onOpenFile']
   onCreate: FileTreeProps['onCreate']
   onDelete: FileTreeProps['onDelete']
-  onOpenLocal: FileTreeProps['onOpenLocal']
   t: SshFilesTranslate
 }) {
   const [children, setChildren] = useState<SshFileEntry[] | null>(null)
@@ -120,25 +113,15 @@ function TreeRow({
         { id: 'new-dir', label: t('tree.newDir') },
       )
     }
-    if (mode === 'local') {
-      items.push(
-        { id: 'open-code', label: t('tree.openCode') },
-        { id: 'open-marktext', label: t('tree.openMarktext') },
-        { id: 'open-default', label: t('tree.openDefault') },
-      )
-    }
     items.push({ id: 'delete', label: t('tree.delete'), danger: true })
     return items
-  }, [entry.kind, mode, t])
+  }, [entry.kind, t])
 
   const onMenuSelect = (id: string): void => {
     setMenuOpen(false)
     switch (id) {
       case 'new-file': onCreate(entry.path, 'file'); break
       case 'new-dir': onCreate(entry.path, 'dir'); break
-      case 'open-code': void onOpenLocal(entry.path, 'code'); break
-      case 'open-marktext': void onOpenLocal(entry.path, 'marktext'); break
-      case 'open-default': void onOpenLocal(entry.path, 'default'); break
       case 'delete': onDelete(entry); break
     }
   }
@@ -201,12 +184,10 @@ function TreeRow({
               entry={child}
               depth={depth + 1}
               list={list}
-              mode={mode}
               showHidden={showHidden}
               onOpenFile={onOpenFile}
               onCreate={onCreate}
               onDelete={onDelete}
-              onOpenLocal={onOpenLocal}
               t={t}
             />
           ))}
@@ -222,7 +203,7 @@ function TreeRow({
 }
 
 /** The file tree: parent row plus recursive entries under the root. */
-export function FileTree({ root, list, mode, onOpenFile, onCreate, onDelete, onOpenLocal, t }: FileTreeProps) {
+export function FileTree({ root, list, onOpenFile, onCreate, onDelete, t }: FileTreeProps) {
   const [refreshKey, setRefreshKey] = useState(0)
   const [showHidden, setShowHidden] = useState(false)
   const [parentMenu, setParentMenu] = useState(false)
@@ -231,16 +212,6 @@ export function FileTree({ root, list, mode, onOpenFile, onCreate, onDelete, onO
   // The root row lives here so a refresh remounts only the top level.
   const rootEntry: SshFileEntry = { name: root, path: root, kind: 'dir', hidden: false }
   const parent = parentOf(root)
-
-  const handleOpenLocal = (path: string, app: 'code' | 'marktext' | 'default'): Promise<void> => {
-    setFailure(null)
-    const action = app === 'code'
-      ? onOpenLocal(path, 'code')
-      : app === 'marktext' ? onOpenLocal(path, 'marktext') : onOpenLocal(path, 'default')
-    return action.catch((error: unknown) => {
-      setFailure({ path, message: error instanceof Error ? error.message : String(error) })
-    })
-  }
 
   return (
     <div className={css.treeRoot}>
@@ -302,12 +273,10 @@ export function FileTree({ root, list, mode, onOpenFile, onCreate, onDelete, onO
           entry={rootEntry}
           depth={0}
           list={list}
-          mode={mode}
           showHidden={showHidden}
           onOpenFile={onOpenFile}
           onCreate={onCreate}
           onDelete={onDelete}
-          onOpenLocal={handleOpenLocal}
           t={t}
         />
       </div>

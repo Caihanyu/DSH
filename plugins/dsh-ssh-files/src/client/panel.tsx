@@ -1,17 +1,15 @@
 /**
- * SshFilesPanel: the details-column occupant this plugin registers. The panel
- * shows and drives the state of the conversation it is mounted on — its
- * working mode (local / SSH), its remembered server, and its own live
- * connection — so separate conversations never share a server preference or
- * channel. It browses the active filesystem in a lazy tree and reads/writes
- * text files in a built-in editor. The panel auto-opens the column is not its
- * job: ui-conversation's inspect gesture opens it, and this plugin's own
- * registration wins the column the moment it is open.
+ * SshFilesPanel: the right Sidebar's `ssh-files` tab body. The panel shows and
+ * drives the SSH state of the conversation it is mounted on — its remembered
+ * server, its own live connection — so separate conversations never share a
+ * channel. It browses the remote filesystem in a lazy tree and reads/writes
+ * text files in a built-in editor. The shipped workspace tree owns local file
+ * browsing, so this panel stays SSH-only.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Button, IconCloseOutline16, IconPlusOutline16, IconSettingsOutline14,
+  Button, IconPlusOutline16, IconSettingsOutline14,
   IconWarningOutline16, Input, Menu, Modal, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SshFileEntry, SshFilesPanelProps, SshStateResponse } from './contract.ts'
@@ -28,15 +26,10 @@ function joinPath(dir: string, name: string): string {
 /** The details panel. */
 export function SshFilesPanel(props: SshFilesPanelProps) {
   const {
-    useSessions, sessionId: sid, t,
-    openDetails, closeDetails,
+    sessionId: sid, t,
     getState, setMode, addServer, updateServer, removeServer, connect, disconnect,
     list, read, write, mkdir, unlink, openNewSessionOn,
-    openLocalDefault, openLocalCode, openLocalMarktext,
   } = props
-  // Session workspace root: the local tree's base. An omitted cwd (blank
-  // session) renders the empty state rather than a fabricated root.
-  const cwd = useSessions(store => store.byId[sid]?.cwd)
 
   const [response, setResponse] = useState<SshStateResponse | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -54,24 +47,33 @@ export function SshFilesPanel(props: SshFilesPanelProps) {
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  // The column opens for the session that mounts this panel.
-  useEffect(() => { openDetails() }, [openDetails])
-
-  // Initial state load (abort-guarded) for THIS session.
+  // Initial state load (abort-guarded) for THIS session. The panel is
+  // SSH-only, so a session that still remembers the old local mode is switched
+  // once here and everything after reads and drives the ssh side.
   useEffect(() => {
     const controller = new AbortController()
     setLoadError(null)
+    const report = (error: unknown): void => {
+      if (controller.signal.aborted) return
+      setLoadError(error instanceof Error ? error.message : String(error))
+    }
     getState(sid, controller.signal).then(
-      setResponse,
-      (error: unknown) => {
+      (state) => {
         if (controller.signal.aborted) return
-        setLoadError(error instanceof Error ? error.message : String(error))
+        if (state.state.mode === 'ssh') {
+          setResponse(state)
+          return
+        }
+        void setMode(sid, 'ssh').then(
+          (next) => { if (!controller.signal.aborted) setResponse(next) },
+          report,
+        )
       },
+      report,
     )
     return () => { controller.abort() }
-  }, [getState, sid])
+  }, [getState, setMode, sid])
 
-  const mode = response?.state.mode ?? 'local'
   const connected = response?.state.connected ?? false
   const activeServer = useMemo(
     () => response?.state.servers.find(server => server.id === response.state.serverId) ?? null,
@@ -82,20 +84,8 @@ export function SshFilesPanel(props: SshFilesPanelProps) {
     [response, selectedId],
   )
 
-  /** Tree base: session cwd in local mode, the server root when connected. */
-  const localRoot = cwd
+  /** Tree base: the connected server's root. */
   const sshRoot = response?.root ?? null
-
-  const handleSetMode = async (next: 'local' | 'ssh'): Promise<void> => {
-    if (next === mode) return
-    setOpenFile(null)
-    setConnectError(null)
-    try {
-      setResponse(await setMode(sid, next))
-    } catch (error) {
-      setConnectError(error instanceof Error ? error.message : String(error))
-    }
-  }
 
   // Auto-reconnect once per mount: an SSH-mode session whose remembered server
   // is present reconnects without a click, so a new conversation opened on a
@@ -188,15 +178,6 @@ export function SshFilesPanel(props: SshFilesPanelProps) {
     }
   }
 
-  const openLocalAction = (app: 'code' | 'marktext' | 'default'): ((path: string) => Promise<void>) =>
-    app === 'code'
-      ? openLocalCode
-      : app === 'marktext' ? openLocalMarktext : openLocalDefault
-
-  /** FileTree's per-row opener: choose the app from the row menu's id. */
-  const handleOpenLocal = (path: string, app: 'code' | 'marktext' | 'default'): Promise<void> =>
-    openLocalAction(app)(path)
-
   const serverMenuItems = (response?.state.servers ?? []).map(server => ({
     id: server.id,
     label: `${server.name}（${server.username}@${server.host}）`,
@@ -205,27 +186,6 @@ export function SshFilesPanel(props: SshFilesPanelProps) {
   return (
     <div className={css.root}>
       <header className={css.header}>
-        <div className={css.modeBar} role="tablist" aria-label={t('mode.tip')}>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'local'}
-            className={mode === 'local' ? `${css.modeTab} ${css.modeTabActive}` : css.modeTab}
-            onClick={() => { void handleSetMode('local') }}
-          >
-            {t('mode.local')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'ssh'}
-            className={mode === 'ssh' ? `${css.modeTab} ${css.modeTabActive}` : css.modeTab}
-            onClick={() => { void handleSetMode('ssh') }}
-          >
-            {t('mode.ssh')}
-          </button>
-        </div>
-        {mode === 'ssh' && (
           <div className={css.connBar}>
             {connected && activeServer !== null ? (
               <>
@@ -285,16 +245,6 @@ export function SshFilesPanel(props: SshFilesPanelProps) {
               <IconSettingsOutline14 />
             </button>
           </div>
-        )}
-        <button
-          type="button"
-          className={css.close}
-          aria-label={t('panel.close')}
-          title={t('panel.close')}
-          onClick={() => { closeDetails() }}
-        >
-          <IconCloseOutline16 />
-        </button>
       </header>
       <div className={css.body}>
         {loadError !== null && (
@@ -307,35 +257,16 @@ export function SshFilesPanel(props: SshFilesPanelProps) {
         {connectError !== null && (
           <div className={css.errorText} role="alert">{t('conn.failed', { message: connectError })}</div>
         )}
-        {response !== null && loadError === null && openFile === null && mode === 'local' && (
-          localRoot === undefined
-            ? <div className={css.empty}>{t('tree.empty')}</div>
-            : (
-              <FileTree
-                key={`local-${localRoot}`}
-                root={localRoot}
-                list={(path, signal) => list(sid, path, signal)}
-                mode="local"
-                onOpenFile={setOpenFile}
-                onCreate={(dirPath, kind) => { setCreateTarget({ dirPath, kind }); setNewName(''); setCreateError(null) }}
-                onDelete={setDeleteTarget}
-                onOpenLocal={handleOpenLocal}
-                t={t}
-              />
-            )
-        )}
-        {response !== null && loadError === null && openFile === null && mode === 'ssh' && (
+        {response !== null && loadError === null && openFile === null && (
           connected && sshRoot !== null
             ? (
               <FileTree
                 key={`ssh-${sshRoot}`}
                 root={sshRoot}
                 list={(path, signal) => list(sid, path, signal)}
-                mode="ssh"
                 onOpenFile={setOpenFile}
                 onCreate={(dirPath, kind) => { setCreateTarget({ dirPath, kind }); setNewName(''); setCreateError(null) }}
                 onDelete={setDeleteTarget}
-                onOpenLocal={handleOpenLocal}
                 t={t}
               />
             )

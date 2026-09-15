@@ -8,6 +8,8 @@
 export const zh = {
   'panel.title': '文件',
   'panel.close': '关闭面板',
+  'tab.title': 'SSH 文件',
+  'guide.description': '连接 SSH 服务器，浏览并编辑远端文件（会话各自记住连接）',
   'mode.local': '本地',
   'mode.ssh': 'SSH',
   'mode.tip': '选择工作方式（默认打开最近一次使用的方式）',
@@ -86,6 +88,8 @@ export const zh = {
 export const en = {
   'panel.title': 'Files',
   'panel.close': 'Close panel',
+  'tab.title': 'SSH Files',
+  'guide.description': 'Connect to an SSH server and browse or edit its files (each session remembers its own connection)',
   'mode.local': 'Local',
   'mode.ssh': 'SSH',
   'mode.tip': 'Choose the working mode (the last used one opens by default)',
