@@ -11,12 +11,16 @@
  */
 
 import { readdir } from 'node:fs/promises'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
-import type {} from '@deepseek-ai/dsh-client-connection'
+import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { runNativeCommand } from '@deepseek-ai/dsh-native-command'
 import z from '@deepseek-ai/schemastery'
+import {
+  loadState, pathExists, saveState, scanApps, parseState,
+  type AppSlot, type SetupState,
+} from './setup.ts'
 
 /** One row of a workspace-files directory listing (wire type, browser-safe). */
 export interface WorkspaceFilesEntry {
@@ -38,23 +42,118 @@ export interface WorkspaceFilesListing {
   entries: WorkspaceFilesEntry[]
 }
 
-/** Validated plugin configuration. */
+/** Validated plugin configuration: the discovery seed and the legacy fallback. */
 export interface Config {
   /** Executable that opens a code file: a PATH name or an absolute path (default `code`). */
   code: string
-  /** Executable that opens a Markdown file: a PATH name or an absolute path (default `marktext`). */
+  /** First-choice Markdown editor: a PATH name or an absolute path (default `typora`). */
+  typora: string
+  /** Second-choice Markdown editor, used when `typora` does not resolve (default `marktext`). */
   marktext: string
 }
 
 export const Config: z<Config> = z.object({
   code: z.string().default('code'),
+  typora: z.string().default('typora'),
   marktext: z.string().default('marktext'),
 })
 
+/** Display names of the candidates the fallback path can reach. */
+const CANDIDATE_LABELS: Record<string, string> = {
+  typora: 'Typora',
+  marktext: 'MarkText',
+  vscode: 'VS Code',
+  wps: 'WPS Office',
+}
+
+/** Config values a discovery pass or a fallback resolution starts from, by candidate id. */
+function configuredSeed(config: Config): Record<string, string> {
+  return {
+    typora: config.typora.trim(),
+    marktext: config.marktext.trim(),
+    vscode: config.code.trim(),
+  }
+}
+
+/**
+ * Resolve one configured value: an absolute path answers as given, a bare name
+ * goes through PATH (and `App Paths` on Windows).
+ * @param value - the configured PATH name or absolute path.
+ * @param signal - caller cancellation.
+ * @returns the resolved command, or undefined when it does not resolve.
+ */
+async function resolveConfiguredValue(value: string, signal: AbortSignal): Promise<string | undefined> {
+  if (value.includes('/') || value.includes('\\')) return await pathExists(value) ? value : undefined
+  try {
+    if (process.platform === 'win32') {
+      const probe = `$c = Get-Command -Name ${powershellLiteral(value)} -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { $c.Source }`
+      const result = await runNativeCommand('powershell.exe', ['-NoProfile', '-Command', probe], signal)
+      const found = (result.stdout ?? '').trim()
+      return found === '' ? undefined : found
+    }
+    const result = await runNativeCommand('which', [value], signal)
+    const found = (result.stdout ?? '').trim().split(/\r?\n/)[0]
+    return found === '' ? undefined : found
+  } catch {
+    return undefined
+  }
+}
+
+/** One opener the host resolved for a slot. */
+interface ResolvedOpener {
+  /** Executable the opener runs. */
+  command: string
+  /** Display name used verbatim in the tree's labels. */
+  label: string
+}
+
+/**
+ * Resolve the executable one slot should launch. The wizard's answer wins;
+ * a machine that never answered falls back to the plugin config's own values,
+ * and a user who declined the whole feature has no opener at all — that "off"
+ * state is what keeps the plugin from changing how files open.
+ * @param slot - which slot to resolve.
+ * @param state - persisted setup state.
+ * @param config - validated plugin configuration.
+ * @param signal - caller cancellation.
+ * @returns the resolved opener, or undefined when the slot has none.
+ */
+async function resolveSlotOpener(
+  slot: AppSlot,
+  state: SetupState,
+  config: Config,
+  signal: AbortSignal,
+): Promise<ResolvedOpener | undefined> {
+  const entry = state.apps[slot]
+  if (entry !== undefined && entry.enabled && entry.command.trim() !== '') {
+    return { command: entry.command, label: entry.label }
+  }
+  if (state.status === 'off') return undefined
+  const seed = configuredSeed(config)
+  const order = slot === 'markdown' ? ['typora', 'marktext'] : slot === 'code' ? ['vscode'] : []
+  for (const id of order) {
+    const value = seed[id]
+    if (value === undefined || value === '') continue
+    const command = await resolveConfiguredValue(value, signal)
+    if (command !== undefined) return { command, label: CANDIDATE_LABELS[id] ?? id }
+  }
+  return undefined
+}
+
+/** Message used when a slot has no configured application to open with. */
+function noOpenerMessage(slot: AppSlot): string {
+  const what = slot === 'markdown' ? 'Markdown 编辑器' : slot === 'code' ? '代码编辑器' : '文档应用'
+  return `没有配置可用的${what}：请在本插件侧栏的「打开方式设置」里选择或填写对应软件的启动路径`
+}
+
 /** Stable Cordis plugin name. */
 export const name = 'workspace-files'
-/** Required services: the connection transport's RPC registry. */
-export const inject = ['connection']
+/**
+ * Required services: the connection transport's RPC registry and the HTTP
+ * server it mounts every registered channel on (the registry touches
+ * `webServer` through the registering fiber, so it must be declared here).
+ */
+export const inject = ['connection', 'webServer']
 
 /** Recover one validated `{ path }` request payload; undefined = malformed. */
 function parsePath(payload: unknown): string | undefined {
@@ -137,52 +236,221 @@ async function runOpener(command: string, path: string, signal: AbortSignal): Pr
 }
 
 /**
+ * Open one path with the operating system's default application. Windows
+ * resolves both files and directories through the shell's association, so
+ * `Start-Process` covers the whole path space there; macOS and Linux use the
+ * platform opener.
+ * @param path - absolute host path to open.
+ * @param signal - caller cancellation.
+ */
+async function openWithDefaultApp(path: string, signal: AbortSignal): Promise<void> {
+  if (process.platform === 'win32') {
+    await runNativeCommand(
+      'powershell.exe',
+      ['-NoProfile', '-Command', `Start-Process -FilePath ${powershellLiteral(path)}`],
+      signal,
+    )
+    return
+  }
+  await runNativeCommand(process.platform === 'darwin' ? 'open' : 'xdg-open', [path], signal)
+}
+
+/**
  * Mount the `/workspace-files` RPC channel. Endpoints:
  * - `list` — one directory level with file/directory kinds (`{ path }` → {@link WorkspaceFilesListing})
- * - `open-in-code` — open a path in VS Code (`{ path }`)
- * - `open-in-marktext` — open a path in MarkText (`{ path }`)
- * The channel is loopback-only (the same trust fence as every `/api` request).
+ * - `state` — the persisted first-run setup (→ {@link SetupState})
+ * - `scan` — discover the desktop applications this machine has (`{ deep? }` → `{ found, truncated }`)
+ * - `save` — persist the wizard's answer (`{ status, apps }` → the saved state)
+ * - `open-default` — open a path in the operating system's default application (`{ path }`)
+ * - `open-in-code` / `open-in-markdown` / `open-in-office` — open a path through the configured slot
  * @param ctx - cordis context carrying the injected `connection` service.
  * @param config - validated opener executables.
  */
-export function apply(ctx: Context, config: Config): void {
-  const handler: ConnectionRpcHandler = async (endpoint, payload, signal) => {
-    if (endpoint === 'list') {
-      const path = parseStringField(payload, 'path')
-      if (path === undefined) {
-        return { ok: false, error: { code: 'internal', message: 'workspace-files: list requires a non-empty string path', details: {} } }
-      }
-      try {
-        return { ok: true, value: await listDirectory(path) }
-      } catch (error) {
-        if (signal.aborted) {
-          return { ok: false, error: { code: 'cancelled', message: 'directory listing was aborted', details: {} } }
-        }
-        const message = error instanceof Error ? error.message : String(error)
-        return { ok: false, error: { code: 'internal', message: `workspace-files: 无法读取目录 ${path}: ${message}`, details: {} } }
-      }
-    }
-    const path = parsePath(payload)
-    if (path === undefined) {
-      return { ok: false, error: { code: 'internal', message: 'workspace-files: request payload must carry a non-empty string path', details: {} } }
-    }
-    const command = endpoint === 'open-in-code' ? config.code : endpoint === 'open-in-marktext' ? config.marktext : undefined
-    if (command === undefined) {
-      return { ok: false, error: { code: 'internal', message: `workspace-files: unknown endpoint ${endpoint}`, details: {} } }
-    }
-    try {
-      await runOpener(command, path, signal)
-      return { ok: true, value: { opened: true as const } }
-    } catch (error) {
-      if (signal.aborted) {
-        return { ok: false, error: { code: 'cancelled', message: 'path open was aborted', details: {} } }
-      }
-      const message = error instanceof Error ? error.message : String(error)
-      return { ok: false, error: { code: 'internal', message, details: {} } }
-    }
+/** The absolute route path this plugin owns on the app's HTTP server. */
+const ROUTE_PATH = '/workspace-files'
+
+/** Largest request body this route accepts (every payload is a single path). */
+const MAX_BODY_BYTES = 64 * 1024
+
+/** Read one bounded JSON request body; `undefined` for an empty body. */
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of request) {
+    const buffer = chunk as Buffer
+    size += buffer.length
+    if (size > MAX_BODY_BYTES) throw new Error('request body exceeds the route limit')
+    chunks.push(buffer)
   }
-  ctx.effect(
-    () => ctx.connection.rpc.handle('/workspace-files', handler, { authority: 'loopback' }),
-    'workspace-files: rpc channel',
-  )
+  if (chunks.length === 0) return undefined
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+}
+
+/** Write one JSON response, owning its content length. */
+function writeJson(response: ServerResponse, status: number, body: unknown): void {
+  if (response.writableEnded || response.destroyed) return
+  const payload = JSON.stringify(body)
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(payload),
+  })
+  response.end(payload)
+}
+
+/**
+ * Mount the `/workspace-files` HTTP route. Endpoints, each a JSON POST
+ * answering `{ ok: true, value }` or `{ ok: false, error: { message } }`:
+ * - `list` — one directory level with file/directory kinds (`{ path }` → {@link WorkspaceFilesListing})
+ * - `state` — the persisted first-run setup (→ {@link SetupState})
+ * - `scan` — discover the desktop applications this machine has (`{ deep? }` → `{ found, truncated }`)
+ * - `save` — persist the wizard's answer (`{ status, apps }` → the saved state)
+ * - `open-default` — open a path in the operating system's default application (`{ path }`)
+ * - `open-in-code` / `open-in-markdown` / `open-in-office` — open a path through the configured slot
+ *
+ * The route sits behind the connection service's Host/Origin fence and
+ * browser-session check — the same policy every `/api` request carries — and
+ * declares `webServer` because the route table lives on that service.
+ * @param ctx - cordis context carrying the injected services.
+ * @param config - validated opener executables.
+ */
+export function apply(ctx: Context, config: Config): void {
+  ctx.inject(['webServer', 'connection'], (webCtx) => {
+    /** Settle one endpoint call into the route's JSON envelope. */
+    const settle = (
+      response: ServerResponse,
+      status: number,
+      result: { ok: true, value: unknown } | { ok: false, message: string },
+    ): void => {
+      writeJson(response, status, result.ok
+        ? { ok: true, value: result.value }
+        : { ok: false, error: { message: result.message } })
+    }
+
+    const route: WebRoute = {
+      kind: 'prefix',
+      path: ROUTE_PATH,
+      handler: async (request, response) => {
+        const rejection = webCtx.connection.requestRejection(request)
+        if (rejection !== undefined) {
+          response.writeHead(rejection)
+          response.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+          return
+        }
+        if (request.method !== 'POST') {
+          settle(response, 405, { ok: false, message: 'workspace-files: this route accepts POST only' })
+          return
+        }
+        const endpoint = new URL(request.url ?? '/', 'http://127.0.0.1')
+          .pathname.slice(ROUTE_PATH.length + 1)
+        let payload: unknown
+        try {
+          payload = await readJsonBody(request)
+        } catch (error) {
+          settle(response, 400, {
+            ok: false,
+            message: `workspace-files: malformed request body: ${error instanceof Error ? error.message : String(error)}`,
+          })
+          return
+        }
+        // A client that goes away aborts the work in flight (a half-open
+        // editor launch is the case that matters).
+        const controller = new AbortController()
+        response.once('close', () => {
+          if (!response.writableEnded) controller.abort()
+        })
+        const signal = controller.signal
+
+        if (endpoint === 'list') {
+          const path = parseStringField(payload, 'path')
+          if (path === undefined) {
+            settle(response, 400, { ok: false, message: 'workspace-files: list requires a non-empty string path' })
+            return
+          }
+          try {
+            settle(response, 200, { ok: true, value: await listDirectory(path) })
+          } catch (error) {
+            settle(response, 500, {
+              ok: false,
+              message: `workspace-files: 无法读取目录 ${path}: ${error instanceof Error ? error.message : String(error)}`,
+            })
+          }
+          return
+        }
+
+        if (endpoint === 'state') {
+          try {
+            settle(response, 200, { ok: true, value: await loadState() })
+          } catch (error) {
+            settle(response, 500, { ok: false, message: error instanceof Error ? error.message : String(error) })
+          }
+          return
+        }
+
+        if (endpoint === 'scan') {
+          const deep = typeof (payload as { deep?: unknown } | null)?.deep === 'boolean'
+            && (payload as { deep?: boolean }).deep === true
+          try {
+            const result = await scanApps({ configured: configuredSeed(config), deep, signal })
+            settle(response, 200, { ok: true, value: result })
+          } catch (error) {
+            if (signal.aborted) {
+              settle(response, 499, { ok: false, message: 'workspace-files: the request was aborted' })
+              return
+            }
+            settle(response, 500, { ok: false, message: error instanceof Error ? error.message : String(error) })
+          }
+          return
+        }
+
+        if (endpoint === 'save') {
+          const saved = parseState(payload)
+          if (saved === undefined) {
+            settle(response, 400, { ok: false, message: 'workspace-files: save requires a status and an apps map' })
+            return
+          }
+          try {
+            await saveState(saved)
+            settle(response, 200, { ok: true, value: saved })
+          } catch (error) {
+            settle(response, 500, { ok: false, message: error instanceof Error ? error.message : String(error) })
+          }
+          return
+        }
+
+        if (endpoint === 'open-default' || endpoint === 'open-in-code'
+          || endpoint === 'open-in-markdown' || endpoint === 'open-in-office') {
+          const path = parsePath(payload)
+          if (path === undefined) {
+            settle(response, 400, { ok: false, message: `workspace-files: ${endpoint} requires a non-empty string path` })
+            return
+          }
+          try {
+            if (endpoint === 'open-default') {
+              await openWithDefaultApp(path, signal)
+            } else {
+              const slot: AppSlot = endpoint === 'open-in-code'
+                ? 'code'
+                : endpoint === 'open-in-markdown' ? 'markdown' : 'office'
+              const state = await loadState()
+              const opener = await resolveSlotOpener(slot, state, config, signal)
+              if (opener === undefined) throw new Error(noOpenerMessage(slot))
+              await runOpener(opener.command, path, signal)
+            }
+            settle(response, 200, { ok: true, value: { opened: true } })
+          } catch (error) {
+            if (signal.aborted) {
+              settle(response, 499, { ok: false, message: 'workspace-files: the request was aborted' })
+              return
+            }
+            settle(response, 500, { ok: false, message: error instanceof Error ? error.message : String(error) })
+          }
+          return
+        }
+
+        settle(response, 404, { ok: false, message: `workspace-files: unknown endpoint ${endpoint}` })
+      },
+    }
+
+    webCtx.effect(() => webCtx.webServer.register(route), 'workspace-files: route')
+  })
 }

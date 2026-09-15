@@ -16,3 +16,10 @@ Thumbs.db
 # sensitive local state (never upload)
 .credentials.yaml
 state.json
+
+# plugin / builder local dev installs (registry mirrors and lock files)
+plugins/*/.npmrc
+plugins/*/package-lock.json
+plugins/*/.typecheck-head/
+build/.npmrc
+build/package-lock.json

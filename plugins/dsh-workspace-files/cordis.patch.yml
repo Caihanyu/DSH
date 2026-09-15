@@ -3,12 +3,29 @@
 # the shipped dsh-base and dsh-web-app bundles never carry it, so harness
 # updates cannot turn it on or off.
 #
+# The entry id differs from the plugin package's own Cordis name because the
+# shipped composition already carries a `workspace-files` loader entry (the
+# api-workspace-files remote), and loader entry ids are unique per tree.
+#
+# `inject` names the services this row needs before it applies: the generic RPC
+# registry (`connection`) and the HTTP server every registered channel mounts
+# on (`webServer` — the registry reaches it through the registering fiber).
+#
 # The openers are deployment-varying executables, so they are Config fields
 # (never hardcoded): override them in a later patch layer or the profile's own
-# cordis.patch.yml when `code`/`marktext` are not on PATH.
+# cordis.patch.yml when `code` / `typora` / `marktext` are not on PATH.
+#
+# Markdown routing: `typora` is the first choice, `marktext` the fallback, and
+# the host probes them in that order per open — the first one that resolves is
+# the one used. An entry installed outside PATH (a portable D:\Typora\... copy,
+# say) only needs its absolute path here; nothing is scanned or auto-detected.
 - insert:
-    - id: workspace-files
+    - id: workspace-files-tab
       name: '@deepseek-ai/dsh-workspace-files'
+      inject:
+        - connection
+        - webServer
       config:
         code: code
+        typora: typora
         marktext: marktext

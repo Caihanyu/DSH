@@ -215,31 +215,45 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.openMenu {
+/* ── open-with dialog (the "⋯" button's centered chooser) ───────────── */
+
+.dialogBody {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding-bottom: 6px;
+  gap: 12px;
 }
 
-.menuItem {
-  display: block;
-  width: fit-content;
-  max-width: 100%;
-  padding: 3px 8px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
+.dialogPath {
+  font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: 12px;
   line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.dialogActions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dialogAction {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 13px;
+  line-height: 20px;
   text-align: left;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
   cursor: pointer;
 }
 
-.menuItem:hover {
+.dialogAction:hover {
   background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-border-l4);
 }
 
 .errorText {
@@ -406,4 +420,119 @@
 
 .code[data-error] {
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* ── pass-through rows (no application configured) ─────────────────── */
+
+/* A real button, so the shipped single-click semantics and focus ring hold. */
+.rowButton {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.noticeText {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── first-run setup wizard ─────────────────────────────────────────── */
+
+.setupBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setupQuestion {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.setupHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.setupTable {
+  width: 100%;
+  border-spacing: 0 6px;
+}
+
+.setupCheckCell {
+  width: 24px;
+  vertical-align: middle;
+}
+
+.setupNameCell {
+  width: 116px;
+  vertical-align: middle;
+}
+
+.setupName {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.setupRole {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.setupInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.setupInput:focus {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary, #4f8cff);
+}
+
+.setupWarn {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-warning-primary, #f59e0b);
+}
+
+.setupError {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.setupFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

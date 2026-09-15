@@ -1,0 +1,16 @@
+{
+  "name": "dsh-plugins-build",
+  "private": true,
+  "type": "module",
+  "description": "Standalone client-bundle builder for the DSH UI plugins in this repository.",
+  "scripts": {
+    "bundle": "node client-bundle.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "lightningcss": "1.33.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

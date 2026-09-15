@@ -1,5 +1,5 @@
 /**
- * Contract types for the workspace-files details panel: the inject face the
+ * Contract types for the workspace-files sidebar tab: the inject face the
  * plugin supplies to its registration and the component's composed props.
  */
 
@@ -28,24 +28,77 @@ export interface WorkspaceFilesListing {
   entries: WorkspaceFilesEntry[]
 }
 
-/** The details-panel inject face: layout orchestration plus the file openers. */
-export interface WorkspaceFilesInjected {
-  /** Open the details column (layout orchestration). */
-  openDetails: () => void
-  /** Close the details column (layout orchestration). */
-  closeDetails: () => void
-  /** List one directory level with file/directory kinds through the `/workspace-files` channel. */
-  list: (path: string, signal?: AbortSignal) => Promise<WorkspaceFilesListing>
-  /** Open a path with the operating system's default application. */
-  openPath: (path: string) => Promise<void>
-  /** Open a path in VS Code (the configured `code` executable). */
-  openInCode: (path: string) => Promise<void>
-  /** Open a path in MarkText (the configured `marktext` executable). */
-  openInMarktext: (path: string) => Promise<void>
+/** Application slot a configured executable fills. */
+export type AppSlot = 'markdown' | 'code' | 'office'
+
+/** How the whole feature was decided on this machine. */
+export type SetupStatus = 'pending' | 'ready' | 'off'
+
+/** One configured application, as the wizard left it. */
+export interface AppEntry {
+  /** Candidate identity (`typora`, `marktext`, `wps`, `vscode`). */
+  id: string
+  /** Display name used verbatim in the tree's labels. */
+  label: string
+  /** Absolute path (or PATH name) the opener runs. */
+  command: string
+  /** Whether the user allowed this plugin to use it. */
+  enabled: boolean
 }
 
-/** Composed props of the workspace-files details panel. */
+/** The plugin's persisted setup state. */
+export interface WorkspaceFilesState {
+  version: 1
+  /** `pending` = never answered; `ready` = configured; `off` = user declined. */
+  status: SetupStatus
+  /** Configured applications by slot; a missing slot has no opener. */
+  apps: Partial<Record<AppSlot, AppEntry>>
+}
+
+/** One application a discovery pass resolved. */
+export interface FoundApp {
+  /** Candidate identity (`typora`, `marktext`, `wps`, `vscode`). */
+  id: string
+  /** Slot this application would fill. */
+  slot: AppSlot
+  /** Display name. */
+  label: string
+  /** Absolute executable path. */
+  command: string
+  /** How it was found, for the wizard's provenance line. */
+  source: 'config' | 'location' | 'path' | 'registry' | 'scan'
+}
+
+/** Outcome of one discovery pass. */
+export interface ScanResult {
+  /** Applications the pass resolved. */
+  found: FoundApp[]
+  /** Filenames the deep pass gave up on before its caps (empty = complete). */
+  truncated: string
+}
+
+/** The sidebar-tab inject face: the file openers this plugin owns. */
+export interface WorkspaceFilesInjected {
+  /** List one directory level with file/directory kinds through the `/workspace-files` channel. */
+  list: (path: string, signal?: AbortSignal) => Promise<WorkspaceFilesListing>
+  /** Read the persisted first-run setup. */
+  readState: (signal?: AbortSignal) => Promise<WorkspaceFilesState>
+  /** Discover the desktop applications this machine has (`deep` walks the drives). */
+  scanApps: (deep: boolean, signal?: AbortSignal) => Promise<ScanResult>
+  /** Persist the wizard's answer and return the stored state. */
+  saveState: (state: WorkspaceFilesState) => Promise<WorkspaceFilesState>
+  /** Open a path with the operating system's default application. */
+  openPath: (path: string) => Promise<void>
+  /** Open a path through the configured code-editor slot. */
+  openInCode: (path: string) => Promise<void>
+  /** Open a path through the configured Markdown-editor slot. */
+  openInMarkdown: (path: string) => Promise<void>
+  /** Open a path through the configured office-suite slot. */
+  openInOffice: (path: string) => Promise<void>
+}
+
+/** Composed props of the workspace-files sidebar tab body. */
 export type WorkspaceFilesPanelProps =
-  & PropsRuntime<'details'>
+  & PropsRuntime<'sidebar.right.pane.tab'>
   & PropsLocale<'workspace-files'>
   & WorkspaceFilesInjected

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-workspace-files",
-  "description": "Workspace file explorer: a right-side panel browsing the current session's directory, opening code in VS Code and Markdown in MarkText. An optional profile plugin — not part of the shipped base/web-app bundles, so harness updates never touch it.",
-  "version": "0.1.0",
+  "description": "Workspace file explorer for DeepSeek Harness 0.1.6: takes over the shipped right-sidebar 'files' tab, opens a file on double click through the app its kind routes to (Markdown -> Typora/MarkText, documents -> WPS Office, code -> VS Code, anything else -> the default app), offers the same anchored '⋯' open-with menu the workspace uses, and asks once — on first run — whether it may look for those applications (declining every path leaves Harness file opening untouched). An optional profile plugin: not part of the shipped base/web-app bundles, so harness updates never touch it.",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },
@@ -35,10 +35,8 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-layout"
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
       ],
       "platform": "web"
     }
@@ -48,30 +46,26 @@
     "watch": "tsdown --watch"
   },
   "license": "MIT",
+  "dependencies": {},
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-native-command": "workspace:^"
+    "@deepseek-ai/cordis": "^4.0.2"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-client-connection": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-native-command": "workspace:^",
-    "@deepseek-ai/schemastery": "workspace:^",
-    "@types/react": "~18.3.1",
-    "react": "^18.2.0"
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-client-locale": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-client-ui-workspace": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-host-webserver": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-invariants": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-native-command": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-util-workspace-path": "0.1.6-alpha.1",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "@types/react": "18.3.12",
+    "esbuild": "0.28.2",
+    "lightningcss": "1.33.0",
+    "react": "18.3.1"
   },
   "files": [
     "lib/index.js",
@@ -79,5 +73,8 @@
     "lib/client.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml"
-  ]
+  ],
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
 }

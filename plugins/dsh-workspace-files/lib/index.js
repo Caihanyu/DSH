@@ -1,970 +1,657 @@
+// plugins/dsh-workspace-files/src/index.ts
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join as join2 } from "node:path";
+import { runNativeCommand as runNativeCommand2 } from "@deepseek-ai/dsh-native-command";
+import z from "@deepseek-ai/schemastery";
+
+// plugins/dsh-workspace-files/src/setup.ts
+import { access, mkdir, opendir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { runNativeCommand } from "@deepseek-ai/dsh-native-command";
-//#region ../../../vendor/cosmokit/lib/index.js
-/** Return true when a value is `null` or `undefined`. */
-function isNullable(value) {
-	return value === null || value === void 0;
+var SKIP_DIRECTORIES = /* @__PURE__ */ new Set([
+  "windows",
+  "winsxs",
+  "windowsapps",
+  "system volume information",
+  "$recycle.bin",
+  "recovery",
+  "perflogs",
+  "node_modules",
+  ".git",
+  ".pnpm",
+  ".cache",
+  ".vscode",
+  "temp",
+  "tmp",
+  "packages",
+  "installer",
+  "windows.old",
+  "$windows.~ws",
+  "$windows.~bt",
+  "driverstore",
+  "assembly",
+  "servicing",
+  "softwaredistribution"
+]);
+function driveRoots() {
+  if (process.platform !== "win32") return ["/"];
+  const roots = [];
+  for (const letter of "CDEFGHIJKL".split("")) roots.push(`${letter}:\\`);
+  return roots;
 }
-/** Return true for non-array object values. */
-function isPlainObject(data) {
-	return data && typeof data === "object" && !Array.isArray(data);
+async function pathExists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
-/** Filter object entries and return a new object. */
-function filterKeys(object, filter) {
-	return Object.fromEntries(Object.entries(object).filter(([key, value]) => filter(key, value)));
+function harnessHome() {
+  const configured = process.env.DSH_HOME;
+  if (typeof configured === "string" && configured.trim() !== "") return configured.trim();
+  return join(homedir(), ".dsh");
 }
-/** Map object values while preserving the original key set. */
-function mapValues(object, transform) {
-	return Object.fromEntries(Object.entries(object).map(([key, value]) => [key, transform(value, key)]));
+function stateFilePath() {
+  return join(harnessHome(), "workspace-files", "config.json");
 }
-/** Pick selected keys from an object, optionally including `undefined` values. */
-function pick(source, keys, forced) {
-	if (!keys) return { ...source };
-	const result = {};
-	for (const key of keys) if (forced || source[key] !== void 0) result[key] = source[key];
-	return result;
+async function loadState() {
+  try {
+    const raw = await readFile(stateFilePath(), "utf8");
+    const parsed = JSON.parse(raw);
+    const status = parsed.status;
+    if (status !== "pending" && status !== "ready" && status !== "off") return freshState();
+    return { version: 1, status, apps: parseApps(parsed.apps) };
+  } catch {
+    return freshState();
+  }
 }
-/** Test values using `instanceof` with a `toStringTag` fallback. */
-function is(type, value) {
-	if (arguments.length === 1) return (value) => is(type, value);
-	return type in globalThis && value instanceof globalThis[type] || Object.prototype.toString.call(value).slice(8, -1) === type;
+function freshState() {
+  return { version: 1, status: "pending", apps: {} };
 }
-function isArrayBufferLike(value) {
-	return is("ArrayBuffer", value) || is("SharedArrayBuffer", value);
+function parseApps(input) {
+  const apps = {};
+  if (typeof input !== "object" || input === null) return apps;
+  for (const slot of ["markdown", "code", "office"]) {
+    const raw = input[slot];
+    if (typeof raw !== "object" || raw === null) continue;
+    const entry = raw;
+    if (typeof entry.id !== "string" || typeof entry.label !== "string" || typeof entry.command !== "string" || entry.command.length === 0) continue;
+    apps[slot] = { id: entry.id, label: entry.label, command: entry.command, enabled: entry.enabled === true };
+  }
+  return apps;
 }
-function isArrayBufferSource(value) {
-	return isArrayBufferLike(value) || ArrayBuffer.isView(value);
+async function saveState(state) {
+  const file = stateFilePath();
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(state, null, 2)}
+`, "utf8");
 }
-/** Binary source detection and base64/hex conversion helpers. */
-var Binary;
-(function(Binary) {
-	Binary.is = isArrayBufferLike;
-	Binary.isSource = isArrayBufferSource;
-	function fromSource(source) {
-		if (ArrayBuffer.isView(source)) return source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength);
-		else return source;
-	}
-	Binary.fromSource = fromSource;
-	function toBase64(source) {
-		source = fromSource(source);
-		if (typeof Buffer !== "undefined") return Buffer.from(source).toString("base64");
-		let binary = "";
-		const bytes = new Uint8Array(source);
-		for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-		return btoa(binary);
-	}
-	Binary.toBase64 = toBase64;
-	function fromBase64(source) {
-		if (typeof Buffer !== "undefined") return fromSource(Buffer.from(source, "base64"));
-		return Uint8Array.from(atob(source), (c) => c.charCodeAt(0));
-	}
-	Binary.fromBase64 = fromBase64;
-	function toHex(source) {
-		source = fromSource(source);
-		if (typeof Buffer !== "undefined") return Buffer.from(source).toString("hex");
-		return Array.from(new Uint8Array(source), (byte) => byte.toString(16).padStart(2, "0")).join("");
-	}
-	Binary.toHex = toHex;
-	function fromHex(source) {
-		if (typeof Buffer !== "undefined") return fromSource(Buffer.from(source, "hex"));
-		const hex = source.length % 2 === 0 ? source : source.slice(0, source.length - 1);
-		const buffer = [];
-		for (let i = 0; i < hex.length; i += 2) buffer.push(parseInt(`${hex[i]}${hex[i + 1]}`, 16));
-		return Uint8Array.from(buffer).buffer;
-	}
-	Binary.fromHex = fromHex;
-})(Binary || (Binary = {}));
-Binary.fromBase64;
-Binary.toBase64;
-Binary.fromHex;
-Binary.toHex;
-/** Deep-clone common JavaScript values while preserving prototypes and cycles. */
-function clone(source, refs = /* @__PURE__ */ new Map()) {
-	if (!source || typeof source !== "object") return source;
-	if (is("Date", source)) return new Date(source.valueOf());
-	if (is("RegExp", source)) return new RegExp(source.source, source.flags);
-	if (isArrayBufferLike(source)) return source.slice(0);
-	if (ArrayBuffer.isView(source)) return source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength);
-	const cached = refs.get(source);
-	if (cached) return cached;
-	if (Array.isArray(source)) {
-		const result = [];
-		refs.set(source, result);
-		source.forEach((value, index) => {
-			result[index] = Reflect.apply(clone, null, [value, refs]);
-		});
-		return result;
-	}
-	const result = Object.create(Object.getPrototypeOf(source));
-	refs.set(source, result);
-	for (const key of Reflect.ownKeys(source)) {
-		const descriptor = { ...Reflect.getOwnPropertyDescriptor(source, key) };
-		if ("value" in descriptor) descriptor.value = Reflect.apply(clone, null, [descriptor.value, refs]);
-		Reflect.defineProperty(result, key, descriptor);
-	}
-	return result;
+var CANDIDATES = [
+  {
+    id: "typora",
+    slot: "markdown",
+    label: "Typora",
+    exeName: "typora.exe",
+    pathNames: ["typora"],
+    registry: /typora/i
+  },
+  {
+    id: "marktext",
+    slot: "markdown",
+    label: "MarkText",
+    exeName: "marktext.exe",
+    pathNames: ["marktext"],
+    registry: /marktext/i
+  },
+  {
+    id: "vscode",
+    slot: "code",
+    label: "VS Code",
+    exeName: "code.exe",
+    pathNames: ["code"],
+    registry: /visual studio code|vscode|vs code/i,
+    validate: (directory) => /visual studio code|vscode|vs ?code/i.test(directory)
+  },
+  {
+    id: "wps",
+    slot: "office",
+    label: "WPS Office",
+    exeName: "wps.exe",
+    pathNames: ["wps"],
+    registry: /wps office|kingsoft|金山/i,
+    validate: (directory) => /office6|kingsoft|wps/i.test(directory)
+  }
+];
+function staticLocations(candidate) {
+  const home = process.env.USERPROFILE ?? homedir();
+  const local = process.env.LOCALAPPDATA ?? join(home, "AppData", "Local");
+  const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
+  const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+  const paths = [];
+  if (candidate.id === "typora") {
+    paths.push(
+      join(local, "Programs", "Typora", "Typora.exe"),
+      join(programFiles, "Typora", "Typora.exe"),
+      join(programFilesX86, "Typora", "Typora.exe"),
+      join(home, "scoop", "apps", "typora", "current", "Typora.exe")
+    );
+  } else if (candidate.id === "marktext") {
+    paths.push(
+      join(local, "Programs", "marktext", "MarkText.exe"),
+      join(local, "Programs", "MarkText", "MarkText.exe"),
+      join(programFiles, "MarkText", "MarkText.exe"),
+      join(programFilesX86, "MarkText", "MarkText.exe"),
+      join(home, "scoop", "apps", "marktext", "current", "MarkText.exe")
+    );
+  } else if (candidate.id === "vscode") {
+    paths.push(
+      join(local, "Programs", "Microsoft VS Code", "Code.exe"),
+      join(programFiles, "Microsoft VS Code", "Code.exe"),
+      join(programFilesX86, "Microsoft VS Code", "Code.exe"),
+      join(home, "scoop", "apps", "vscode", "current", "Code.exe")
+    );
+  } else {
+    paths.push(
+      join(local, "Kingsoft", "WPS Office"),
+      join(programFiles, "Kingsoft", "WPS Office"),
+      join(programFilesX86, "Kingsoft", "WPS Office"),
+      join(local, "Kingsoft", "WPSOffice")
+    );
+  }
+  if (process.platform === "win32") {
+    for (const root of driveRoots()) {
+      if (candidate.id === "typora") paths.push(join(root, "Typora", "Typora", "Typora.exe"), join(root, "Typora", "Typora.exe"));
+      else if (candidate.id === "marktext") paths.push(join(root, "MarkText", "MarkText.exe"), join(root, "MarkText", "MarkText-x64.exe"));
+      else if (candidate.id === "vscode") paths.push(join(root, "Microsoft VS Code", "Code.exe"), join(root, "VSCode", "Code.exe"), join(root, "Program Files", "Microsoft VS Code", "Code.exe"));
+      else paths.push(join(root, "WPS Office"), join(root, "Kingsoft", "WPS Office"));
+    }
+  }
+  return paths;
 }
-/** Deeply compare arrays, dates, regexps, buffers, and plain object fields. */
-function deepEqual(a, b, strict) {
-	if (a === b) return true;
-	if (!strict && isNullable(a) && isNullable(b)) return true;
-	if (typeof a !== typeof b) return false;
-	if (typeof a !== "object") return false;
-	if (!a || !b) return false;
-	function check(test, then) {
-		return test(a) ? test(b) ? then(a, b) : false : test(b) ? false : void 0;
-	}
-	return check(Array.isArray, (a, b) => a.length === b.length && a.every((item, index) => deepEqual(item, b[index]))) ?? check(is("Date"), (a, b) => a.valueOf() === b.valueOf()) ?? check(is("RegExp"), (a, b) => a.source === b.source && a.flags === b.flags) ?? check(isArrayBufferLike, (a, b) => {
-		if (a.byteLength !== b.byteLength) return false;
-		const viewA = new Uint8Array(a);
-		const viewB = new Uint8Array(b);
-		for (let i = 0; i < viewA.length; i++) if (viewA[i] !== viewB[i]) return false;
-		return true;
-	}) ?? Object.keys({
-		...a,
-		...b
-	}).every((key) => deepEqual(a[key], b[key], strict));
+async function resolveWpsVersionRoot(root) {
+  try {
+    const handle = await opendir(root);
+    for await (const entry of handle) {
+      if (!entry.isDirectory()) continue;
+      const candidate = join(root, entry.name, "office6", "wps.exe");
+      if (await pathExists(candidate)) return candidate;
+    }
+  } catch {
+    return void 0;
+  }
+  return void 0;
 }
-/** Time constants plus parsing and formatting helpers. */
-var Time;
-(function(Time) {
-	Time.millisecond = 1;
-	Time.second = 1e3;
-	Time.minute = Time.second * 60;
-	Time.hour = Time.minute * 60;
-	Time.day = Time.hour * 24;
-	Time.week = Time.day * 7;
-	let timezoneOffset = (/* @__PURE__ */ new Date()).getTimezoneOffset();
-	function setTimezoneOffset(offset) {
-		timezoneOffset = offset;
-	}
-	Time.setTimezoneOffset = setTimezoneOffset;
-	function getTimezoneOffset() {
-		return timezoneOffset;
-	}
-	Time.getTimezoneOffset = getTimezoneOffset;
-	function getDateNumber(date = /* @__PURE__ */ new Date(), offset) {
-		if (typeof date === "number") date = new Date(date);
-		if (offset === void 0) offset = timezoneOffset;
-		return Math.floor((date.valueOf() / Time.minute - offset) / 1440);
-	}
-	Time.getDateNumber = getDateNumber;
-	function fromDateNumber(value, offset) {
-		const date = new Date(value * Time.day);
-		if (offset === void 0) offset = timezoneOffset;
-		return new Date(+date + offset * Time.minute);
-	}
-	Time.fromDateNumber = fromDateNumber;
-	const numeric = /\d+(?:\.\d+)?/.source;
-	const timeRegExp = new RegExp(`^${[
-		"w(?:eek(?:s)?)?",
-		"d(?:ay(?:s)?)?",
-		"h(?:our(?:s)?)?",
-		"m(?:in(?:ute)?(?:s)?)?",
-		"s(?:ec(?:ond)?(?:s)?)?"
-	].map((unit) => `(${numeric}${unit})?`).join("")}$`);
-	function parseTime(source) {
-		const capture = timeRegExp.exec(source);
-		if (!capture) return 0;
-		return (parseFloat(capture[1]) * Time.week || 0) + (parseFloat(capture[2]) * Time.day || 0) + (parseFloat(capture[3]) * Time.hour || 0) + (parseFloat(capture[4]) * Time.minute || 0) + (parseFloat(capture[5]) * Time.second || 0);
-	}
-	Time.parseTime = parseTime;
-	function parseDate(date) {
-		const parsed = parseTime(date);
-		if (parsed) date = Date.now() + parsed;
-		else if (/^\d{1,2}(:\d{1,2}){1,2}$/.test(date)) date = `${(/* @__PURE__ */ new Date()).toLocaleDateString()}-${date}`;
-		else if (/^\d{1,2}-\d{1,2}-\d{1,2}(:\d{1,2}){1,2}$/.test(date)) date = `${(/* @__PURE__ */ new Date()).getFullYear()}-${date}`;
-		return date ? new Date(date) : /* @__PURE__ */ new Date();
-	}
-	Time.parseDate = parseDate;
-	function format(ms) {
-		const abs = Math.abs(ms);
-		if (abs >= Time.day - Time.hour / 2) return Math.round(ms / Time.day) + "d";
-		else if (abs >= Time.hour - Time.minute / 2) return Math.round(ms / Time.hour) + "h";
-		else if (abs >= Time.minute - Time.second / 2) return Math.round(ms / Time.minute) + "m";
-		else if (abs >= Time.second) return Math.round(ms / Time.second) + "s";
-		return ms + "ms";
-	}
-	Time.format = format;
-	function toDigits(source, length = 2) {
-		return source.toString().padStart(length, "0");
-	}
-	Time.toDigits = toDigits;
-	function template(template, time = /* @__PURE__ */ new Date()) {
-		return template.replace("yyyy", time.getFullYear().toString()).replace("yy", time.getFullYear().toString().slice(2)).replace("MM", toDigits(time.getMonth() + 1)).replace("dd", toDigits(time.getDate())).replace("hh", toDigits(time.getHours())).replace("mm", toDigits(time.getMinutes())).replace("ss", toDigits(time.getSeconds())).replace("SSS", toDigits(time.getMilliseconds(), 3));
-	}
-	Time.template = template;
-})(Time || (Time = {}));
-//#endregion
-//#region ../../../vendor/schemastery/lib/index.mjs
-const kSchema = Symbol.for("schemastery");
-const kValidationError = Symbol.for("ValidationError");
-globalThis.__schemastery_index__ ??= 0;
-globalThis.__schemastery_refs__ = void 0;
-var ValidationError = class extends TypeError {
-	options;
-	name = "ValidationError";
-	constructor(message, options) {
-		let prefix = "$";
-		for (const segment of options.path || []) if (typeof segment === "string") prefix += "." + segment;
-		else if (typeof segment === "number") prefix += "[" + segment + "]";
-		else if (typeof segment === "symbol") prefix += `[Symbol(${segment.toString()})]`;
-		if (prefix.startsWith(".")) prefix = prefix.slice(1);
-		super((prefix === "$" ? "" : `${prefix} `) + message);
-		this.options = options;
-	}
-	static is(error) {
-		return !!error?.[kValidationError];
-	}
-};
-Object.defineProperty(ValidationError.prototype, kValidationError, { value: true });
-const Schema = function(options) {
-	const schema = function(data, options = {}) {
-		return Schema.resolve(data, schema, options)[0];
-	};
-	if (options.refs) {
-		const refs = mapValues(options.refs, (options) => new Schema(options));
-		const getRef = (uid) => refs[uid];
-		for (const key in refs) {
-			const options = refs[key];
-			options.sKey = getRef(options.sKey);
-			options.inner = getRef(options.inner);
-			options.list = options.list && options.list.map(getRef);
-			options.dict = options.dict && mapValues(options.dict, getRef);
-		}
-		return refs[options.uid];
-	}
-	Object.assign(schema, options);
-	if (typeof schema.callback === "string") try {
-		schema.callback = new Function("return " + schema.callback)();
-	} catch {}
-	Object.defineProperty(schema, "uid", { value: globalThis.__schemastery_index__++ });
-	Object.setPrototypeOf(schema, Schema.prototype);
-	schema.meta ||= {};
-	schema.toString = schema.toString.bind(schema);
-	return schema;
-};
-Schema.prototype = Object.create(Function.prototype);
-Schema.prototype[kSchema] = true;
-Object.defineProperty(Schema.prototype, "~standard", { get() {
-	return {
-		version: 1,
-		vendor: "schemastery",
-		validate: (value) => {
-			try {
-				return { value: Schema.resolve(value, this, {})[0] };
-			} catch (error) {
-				if (ValidationError.is(error)) return { issues: [{
-					message: error.message,
-					path: error.options.path
-				}] };
-				throw error;
-			}
-		}
-	};
-} });
-Schema.ValidationError = ValidationError;
-Schema.prototype.toJSON = function toJSON() {
-	if (globalThis.__schemastery_refs__) {
-		globalThis.__schemastery_refs__[this.uid] ??= JSON.parse(JSON.stringify({ ...this }));
-		return this.uid;
-	}
-	globalThis.__schemastery_refs__ = { [this.uid]: { ...this } };
-	globalThis.__schemastery_refs__[this.uid] = JSON.parse(JSON.stringify({ ...this }));
-	const result = {
-		uid: this.uid,
-		refs: globalThis.__schemastery_refs__
-	};
-	globalThis.__schemastery_refs__ = void 0;
-	return result;
-};
-Schema.prototype.set = function set(key, value) {
-	this.dict[key] = value;
-	return this;
-};
-Schema.prototype.push = function push(value) {
-	this.list.push(value);
-	return this;
-};
-function mergeDesc(original, messages) {
-	const result = typeof original === "string" ? { "": original } : { ...original };
-	for (const locale in messages) {
-		const value = messages[locale];
-		if (value?.$description || value?.$desc) result[locale] = value.$description || value.$desc;
-		else if (typeof value === "string") result[locale] = value;
-	}
-	return result;
+var REGISTRY_PROBE = [
+  "$out = @()",
+  "$keys = @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',",
+  "  'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',",
+  "  'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*')",
+  "foreach ($k in $keys) {",
+  "  Get-ItemProperty $k -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName } | ForEach-Object {",
+  "    $out += [pscustomobject]@{ name = $_.DisplayName; target = $_.InstallLocation; icon = $_.DisplayIcon }",
+  "  }",
+  "}",
+  "$paths = @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths', 'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths')",
+  "foreach ($p in $paths) {",
+  "  Get-ChildItem $p -ErrorAction SilentlyContinue | ForEach-Object {",
+  "    $value = (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).'(default)'",
+  '    if ($value) { $out += [pscustomobject]@{ name = $_.PSChildName; target = $value; icon = "" } }',
+  "  }",
+  "}",
+  "ConvertTo-Json -InputObject $out -Compress -Depth 3"
+].join("; ");
+async function readRegistry(signal) {
+  if (process.platform !== "win32") return [];
+  try {
+    const result = await runNativeCommand("powershell.exe", ["-NoProfile", "-Command", REGISTRY_PROBE], signal);
+    const text = (result.stdout ?? "").trim();
+    if (text === "") return [];
+    const parsed = JSON.parse(text);
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    return rows.filter((row) => typeof row?.name === "string");
+  } catch {
+    return [];
+  }
 }
-function getInner(value) {
-	return value?.$value ?? value?.$inner;
+function iconPath(value) {
+  const match = /^"?([^",]+\.exe)"?/.exec(value.trim());
+  return match === void 0 ? void 0 : match[1];
 }
-function extractKeys(data) {
-	return filterKeys(data ?? {}, (key) => !key.startsWith("$"));
+async function resolvesOnPath(name2, signal) {
+  if (process.platform !== "win32") {
+    try {
+      const result = await runNativeCommand("which", [name2], signal);
+      const found = (result.stdout ?? "").trim().split(/\r?\n/)[0];
+      return found === "" ? void 0 : found;
+    } catch {
+      return void 0;
+    }
+  }
+  const probe = `$c = Get-Command -Name '${name2}' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { $c.Source }`;
+  try {
+    const result = await runNativeCommand("powershell.exe", ["-NoProfile", "-Command", probe], signal);
+    const found = (result.stdout ?? "").trim();
+    return found === "" ? void 0 : found;
+  } catch {
+    return void 0;
+  }
 }
-Schema.prototype.i18n = function i18n(messages) {
-	const schema = Schema(this);
-	const desc = mergeDesc(schema.meta.description, messages);
-	if (Object.keys(desc).length) schema.meta.description = desc;
-	if (schema.dict) schema.dict = mapValues(schema.dict, (inner, key) => {
-		return inner.i18n(mapValues(messages, (data) => getInner(data)?.[key] ?? data?.[key]));
-	});
-	if (schema.list) schema.list = schema.list.map((inner, index) => {
-		return inner.i18n(mapValues(messages, (data = {}) => {
-			if (Array.isArray(getInner(data))) return getInner(data)[index];
-			if (Array.isArray(data)) return data[index];
-			return extractKeys(data);
-		}));
-	});
-	if (schema.inner) schema.inner = schema.inner.i18n(mapValues(messages, (data) => {
-		if (getInner(data)) return getInner(data);
-		return extractKeys(data);
-	}));
-	if (schema.sKey) schema.sKey = schema.sKey.i18n(mapValues(messages, (data) => data?.$key));
-	return schema;
-};
-Schema.prototype.extra = function extra(key, value) {
-	const schema = Schema(this);
-	schema.meta = {
-		...schema.meta,
-		[key]: value
-	};
-	return schema;
-};
-for (const key of [
-	"required",
-	"disabled",
-	"collapse",
-	"hidden",
-	"loose"
-]) Object.assign(Schema.prototype, { [key](value = true) {
-	const schema = Schema(this);
-	schema.meta = {
-		...schema.meta,
-		[key]: value
-	};
-	return schema;
-} });
-Schema.prototype.deprecated = function deprecated() {
-	const schema = Schema(this);
-	schema.meta.badges ||= [];
-	schema.meta.badges.push({
-		text: "deprecated",
-		type: "danger"
-	});
-	return schema;
-};
-Schema.prototype.experimental = function experimental() {
-	const schema = Schema(this);
-	schema.meta.badges ||= [];
-	schema.meta.badges.push({
-		text: "experimental",
-		type: "warning"
-	});
-	return schema;
-};
-Schema.prototype.pattern = function pattern(regexp) {
-	const schema = Schema(this);
-	const pattern = pick(regexp, ["source", "flags"]);
-	schema.meta = {
-		...schema.meta,
-		pattern
-	};
-	return schema;
-};
-Schema.prototype.simplify = function simplify(value) {
-	if (deepEqual(value, this.meta.default, this.type === "dict")) return null;
-	if (isNullable(value)) return value;
-	if (this.type === "object" || this.type === "dict") {
-		const result = {};
-		for (const key in value) {
-			const item = (this.type === "object" ? this.dict[key] : this.inner)?.simplify(value[key]);
-			if (this.type === "dict" || !isNullable(item)) result[key] = item;
-		}
-		if (deepEqual(result, this.meta.default, this.type === "dict")) return null;
-		return result;
-	} else if (this.type === "array" || this.type === "tuple") {
-		const result = [];
-		value.forEach((value, index) => {
-			const schema = this.type === "array" ? this.inner : this.list[index];
-			const item = schema ? schema.simplify(value) : value;
-			result.push(item);
-		});
-		return result;
-	} else if (this.type === "intersect") {
-		const result = {};
-		for (const item of this.list) Object.assign(result, item.simplify(value));
-		return result;
-	} else if (this.type === "union") for (const schema of this.list) try {
-		Schema.resolve(value, schema, {});
-		return schema.simplify(value);
-	} catch {}
-	return value;
-};
-Schema.prototype.toString = function toString(inline) {
-	return formatters[this.type]?.(this, inline) ?? `Schema<${this.type}>`;
-};
-Schema.prototype.role = function role(role, extra) {
-	const schema = Schema(this);
-	schema.meta = {
-		...schema.meta,
-		role,
-		extra
-	};
-	return schema;
-};
-for (const key of [
-	"default",
-	"link",
-	"comment",
-	"description",
-	"max",
-	"min",
-	"step"
-]) Object.assign(Schema.prototype, { [key](value) {
-	const schema = Schema(this);
-	schema.meta = {
-		...schema.meta,
-		[key]: value
-	};
-	return schema;
-} });
-const resolvers = {};
-Schema.extend = function extend(type, resolve) {
-	resolvers[type] = resolve;
-};
-Schema.resolve = function resolve(data, schema, options = {}, strict = false) {
-	if (!schema) return [data];
-	if (options.ignore?.(data, schema)) return [data];
-	if (isNullable(data) && schema.type !== "lazy") {
-		if (schema.meta.required) throw new ValidationError(`missing required value`, options);
-		let current = schema;
-		let fallback = schema.meta.default;
-		while (current?.type === "intersect" && isNullable(fallback)) {
-			current = current.list[0];
-			fallback = current?.meta.default;
-		}
-		if (isNullable(fallback)) return [data];
-		data = clone(fallback);
-	}
-	const callback = resolvers[schema.type];
-	if (!callback) throw new ValidationError(`unsupported type "${schema.type}"`, options);
-	try {
-		return callback(data, schema, options, strict);
-	} catch (error) {
-		if (!schema.meta.loose) throw error;
-		return [schema.meta.default];
-	}
-};
-Schema.from = function from(source) {
-	if (isNullable(source)) return Schema.any();
-	else if ([
-		"string",
-		"number",
-		"boolean"
-	].includes(typeof source)) return Schema.const(source).required();
-	else if (source[kSchema]) return source;
-	else if (typeof source === "function") switch (source) {
-		case String: return Schema.string().required();
-		case Number: return Schema.number().required();
-		case Boolean: return Schema.boolean().required();
-		case Function: return Schema.function().required();
-		default: return Schema.is(source).required();
-	}
-	else throw new TypeError(`cannot infer schema from ${source}`);
-};
-Schema.lazy = function lazy(builder) {
-	const toJSON = () => {
-		if (!schema.inner[kSchema]) {
-			schema.inner = schema.builder();
-			schema.inner.meta = {
-				...schema.meta,
-				...schema.inner.meta
-			};
-		}
-		return schema.inner.toJSON();
-	};
-	const schema = new Schema({
-		type: "lazy",
-		builder,
-		inner: { toJSON }
-	});
-	return schema;
-};
-Schema.natural = function natural() {
-	return Schema.number().step(1).min(0);
-};
-Schema.percent = function percent() {
-	return Schema.number().step(.01).min(0).max(1).role("slider");
-};
-Schema.date = function date() {
-	return Schema.union([Schema.is(Date), Schema.transform(Schema.string().role("datetime"), (value, options) => {
-		const date = new Date(value);
-		if (isNaN(+date)) throw new ValidationError(`invalid date "${value}"`, options);
-		return date;
-	}, true)]);
-};
-Schema.regExp = function regExp(flag = "") {
-	return Schema.union([Schema.is(RegExp), Schema.transform(Schema.string().role("regexp", { flag }), (value, options) => {
-		try {
-			return new RegExp(value, flag);
-		} catch (e) {
-			throw new ValidationError(e.message, options);
-		}
-	}, true)]);
-};
-Schema.arrayBuffer = function arrayBuffer(encoding) {
-	return Schema.union([
-		Schema.is(ArrayBuffer),
-		Schema.is(SharedArrayBuffer),
-		Schema.transform(Schema.any(), (value, options) => {
-			if (Binary.isSource(value)) return Binary.fromSource(value);
-			throw new ValidationError(`expected ArrayBufferSource but got ${value}`, options);
-		}, true),
-		...encoding ? [Schema.transform(Schema.string(), (value, options) => {
-			try {
-				return encoding === "base64" ? Binary.fromBase64(value) : Binary.fromHex(value);
-			} catch (e) {
-				throw new ValidationError(e.message, options);
-			}
-		}, true)] : []
-	]);
-};
-Schema.extend("lazy", (data, schema, options, strict) => {
-	if (!schema.inner[kSchema]) {
-		schema.inner = schema.builder();
-		schema.inner.meta = {
-			...schema.meta,
-			...schema.inner.meta
-		};
-	}
-	return Schema.resolve(data, schema.inner, options, strict);
-});
-Schema.extend("any", (data) => {
-	return [data];
-});
-Schema.extend("never", (data, _, options) => {
-	throw new ValidationError(`expected nullable but got ${data}`, options);
-});
-Schema.extend("const", (data, { value }, options) => {
-	if (deepEqual(data, value)) return [value];
-	throw new ValidationError(`expected ${value} but got ${data}`, options);
-});
-function checkWithinRange(data, meta, description, options, skipMin = false) {
-	const { max = Infinity, min = -Infinity } = meta;
-	if (data > max) throw new ValidationError(`expected ${description} <= ${max} but got ${data}`, options);
-	if (data < min && !skipMin) throw new ValidationError(`expected ${description} >= ${min} but got ${data}`, options);
+async function searchInstallLocation(root, candidate) {
+  if (root === "") return void 0;
+  const direct = [root, join(root, candidate.exeName), join(root, candidate.label), join(root, candidate.label, candidate.exeName)];
+  for (const candidatePath of direct) {
+    if (candidatePath.toLowerCase().endsWith(".exe") && await pathExists(candidatePath)) return candidatePath;
+  }
+  if (candidate.id === "wps") {
+    const nested = await resolveWpsVersionRoot(root);
+    if (nested !== void 0) return nested;
+  }
+  try {
+    const handle = await opendir(root);
+    for await (const entry of handle) {
+      if (!entry.isDirectory()) continue;
+      const nested = join(root, entry.name, candidate.exeName);
+      if (await pathExists(nested)) return nested;
+    }
+  } catch {
+    return void 0;
+  }
+  return void 0;
 }
-Schema.extend("string", (data, { meta }, options) => {
-	if (typeof data !== "string") throw new ValidationError(`expected string but got ${data}`, options);
-	if (meta.pattern) {
-		const regexp = new RegExp(meta.pattern.source, meta.pattern.flags);
-		if (!regexp.test(data)) throw new ValidationError(`expect string to match regexp ${regexp}`, options);
-	}
-	checkWithinRange(data.length, meta, "string length", options);
-	return [data];
-});
-function decimalShift(data, digits) {
-	const str = data.toString();
-	if (str.includes("e")) return data * Math.pow(10, digits);
-	const index = str.indexOf(".");
-	if (index === -1) return data * Math.pow(10, digits);
-	const frac = str.slice(index + 1);
-	const integer = str.slice(0, index);
-	if (frac.length <= digits) return +(integer + frac.padEnd(digits, "0"));
-	return +(integer + frac.slice(0, digits) + "." + frac.slice(digits));
+var DEEP_SCAN_BUDGET_MS = 9e4;
+var DEEP_SCAN_MAX_DIRECTORIES = 12e4;
+async function deepScan(targets, found, signal) {
+  const queue = driveRoots().filter((root) => existsSync(root));
+  const deadline = Date.now() + DEEP_SCAN_BUDGET_MS;
+  let visited = 0;
+  while (queue.length > 0 && targets.size > 0) {
+    if (signal.aborted) return "cancelled";
+    if (Date.now() > deadline) return "time budget reached";
+    if (visited >= DEEP_SCAN_MAX_DIRECTORIES) return "directory budget reached";
+    const directory = queue.shift();
+    visited += 1;
+    let handle;
+    try {
+      handle = await opendir(directory);
+    } catch {
+      continue;
+    }
+    try {
+      for await (const entry of handle) {
+        if (signal.aborted) return "cancelled";
+        const lower = entry.name.toLowerCase();
+        if (entry.isDirectory()) {
+          if (SKIP_DIRECTORIES.has(lower) || entry.name.startsWith("$")) continue;
+          queue.push(join(directory, entry.name));
+          continue;
+        }
+        if (!entry.isFile()) continue;
+        const candidate = targets.get(lower);
+        if (candidate === void 0) continue;
+        if (candidate.validate !== void 0 && !candidate.validate(directory)) continue;
+        found.set(candidate.id, join(directory, entry.name));
+        targets.delete(lower);
+      }
+    } catch {
+      continue;
+    }
+  }
+  return void 0;
 }
-function isMultipleOf(data, min, step) {
-	step = Math.abs(step);
-	if (!/^\d+\.\d+$/.test(step.toString())) return (data - min) % step === 0;
-	const index = step.toString().indexOf(".");
-	const digits = step.toString().slice(index + 1).length;
-	return Math.abs(decimalShift(data, digits) - decimalShift(min, digits)) % decimalShift(step, digits) === 0;
+async function scanApps(options) {
+  const { configured = {}, deep, signal } = options;
+  const found = /* @__PURE__ */ new Map();
+  const missing = new Set(CANDIDATES.map((candidate) => candidate.id));
+  for (const candidate of CANDIDATES) {
+    const configuredValue = configured[candidate.slot];
+    if (configuredValue === void 0 || configuredValue.trim() === "") continue;
+    const value = configuredValue.trim();
+    if (await pathExists(value)) {
+      found.set(candidate.id, { id: candidate.id, slot: candidate.slot, label: candidate.label, command: value, source: "config" });
+      missing.delete(candidate.id);
+    }
+  }
+  for (const candidate of CANDIDATES) {
+    if (!missing.has(candidate.id)) continue;
+    for (const name2 of candidate.pathNames) {
+      const resolved = await resolvesOnPath(name2, signal);
+      if (resolved === void 0) continue;
+      found.set(candidate.id, { id: candidate.id, slot: candidate.slot, label: candidate.label, command: resolved, source: "path" });
+      missing.delete(candidate.id);
+      break;
+    }
+  }
+  for (const candidate of CANDIDATES) {
+    if (!missing.has(candidate.id)) continue;
+    for (const location of staticLocations(candidate)) {
+      if (candidate.exeName !== "" && location.toLowerCase().endsWith(".exe")) {
+        if (await pathExists(location)) {
+          found.set(candidate.id, { id: candidate.id, slot: candidate.slot, label: candidate.label, command: location, source: "location" });
+          missing.delete(candidate.id);
+          break;
+        }
+        continue;
+      }
+      if (candidate.id === "wps" && await pathExists(location)) {
+        const nested = await resolveWpsVersionRoot(location);
+        if (nested !== void 0) {
+          found.set(candidate.id, { id: candidate.id, slot: candidate.slot, label: candidate.label, command: nested, source: "location" });
+          missing.delete(candidate.id);
+          break;
+        }
+      }
+    }
+  }
+  if (missing.size > 0) {
+    const rows = await readRegistry(signal);
+    for (const candidate of CANDIDATES) {
+      if (!missing.has(candidate.id)) continue;
+      for (const row of rows) {
+        if (!candidate.registry.test(row.name)) continue;
+        const icon = row.icon === "" || row.icon === void 0 ? void 0 : iconPath(row.icon);
+        const fromIcon = icon !== void 0 && icon.toLowerCase().endsWith(".exe") && await pathExists(icon) ? icon : void 0;
+        const fromLocation = fromIcon ?? await searchInstallLocation(row.target ?? "", candidate);
+        const resolved = fromLocation ?? (row.target !== void 0 && row.target.toLowerCase().endsWith(".exe") && await pathExists(row.target) ? row.target : void 0);
+        if (resolved === void 0) continue;
+        found.set(candidate.id, { id: candidate.id, slot: candidate.slot, label: candidate.label, command: resolved, source: "registry" });
+        missing.delete(candidate.id);
+        break;
+      }
+    }
+  }
+  let truncated;
+  if (deep && missing.size > 0) {
+    const targets = /* @__PURE__ */ new Map();
+    for (const candidate of CANDIDATES) {
+      if (missing.has(candidate.id)) targets.set(candidate.exeName, candidate);
+    }
+    const hits = /* @__PURE__ */ new Map();
+    truncated = await deepScan(targets, hits, signal);
+    for (const [id, command] of hits) {
+      const candidate = CANDIDATES.find((entry) => entry.id === id);
+      found.set(id, { id, slot: candidate.slot, label: candidate.label, command, source: "scan" });
+      missing.delete(id);
+    }
+  }
+  return { found: [...found.values()], truncated: truncated ?? "" };
 }
-Schema.extend("number", (data, { meta }, options) => {
-	if (typeof data !== "number") throw new ValidationError(`expected number but got ${data}`, options);
-	checkWithinRange(data, meta, "number", options);
-	const { step } = meta;
-	if (step && !isMultipleOf(data, meta.min ?? 0, step)) throw new ValidationError(`expected number multiple of ${step} but got ${data}`, options);
-	return [data];
-});
-Schema.extend("boolean", (data, _, options) => {
-	if (typeof data === "boolean") return [data];
-	throw new ValidationError(`expected boolean but got ${data}`, options);
-});
-Schema.extend("bitset", (data, { bits, meta }, options) => {
-	let value = 0, keys = [];
-	if (typeof data === "number") {
-		value = data;
-		for (const key in bits) if (data & bits[key]) keys.push(key);
-	} else if (Array.isArray(data)) {
-		keys = data;
-		for (const key of keys) {
-			if (typeof key !== "string") throw new ValidationError(`expected string but got ${key}`, options);
-			if (key in bits) value |= bits[key];
-		}
-	} else throw new ValidationError(`expected number or array but got ${data}`, options);
-	if (value === meta.default) return [value];
-	return [value, keys];
-});
-Schema.extend("function", (data, _, options) => {
-	if (typeof data === "function") return [data];
-	throw new ValidationError(`expected function but got ${data}`, options);
-});
-Schema.extend("is", (data, { constructor }, options) => {
-	if (typeof constructor === "function") {
-		if (data instanceof constructor) return [data];
-		throw new ValidationError(`expected ${constructor.name} but got ${data}`, options);
-	} else {
-		if (isNullable(data)) throw new ValidationError(`expected ${constructor} but got ${data}`, options);
-		let prototype = Object.getPrototypeOf(data);
-		while (prototype) {
-			if (prototype.constructor?.name === constructor) return [data];
-			prototype = Object.getPrototypeOf(prototype);
-		}
-		throw new ValidationError(`expected ${constructor} but got ${data}`, options);
-	}
-});
-function property(data, key, schema, options) {
-	try {
-		const [value, adapted] = Schema.resolve(data[key], schema, {
-			...options,
-			path: [...options.path || [], key]
-		});
-		if (adapted !== void 0) data[key] = adapted;
-		return value;
-	} catch (e) {
-		if (!options?.autofix) throw e;
-		delete data[key];
-		return schema.meta.default;
-	}
+function parseState(input) {
+  if (typeof input !== "object" || input === null) return void 0;
+  const record = input;
+  const status = record.status;
+  if (status !== "pending" && status !== "ready" && status !== "off") return void 0;
+  const apps = parseApps(record.apps);
+  const usable = Object.values(apps).filter((entry) => entry.enabled && entry.command.trim() !== "");
+  return { version: 1, status: status === "ready" && usable.length === 0 ? "off" : status, apps };
 }
-Schema.extend("array", (data, { inner, meta }, options) => {
-	if (!Array.isArray(data)) throw new ValidationError(`expected array but got ${data}`, options);
-	checkWithinRange(data.length, meta, "array length", options, !isNullable(inner.meta.default));
-	return [data.map((_, index) => property(data, index, inner, options))];
+
+// plugins/dsh-workspace-files/src/index.ts
+var Config = z.object({
+  code: z.string().default("code"),
+  typora: z.string().default("typora"),
+  marktext: z.string().default("marktext")
 });
-Schema.extend("dict", (data, { inner, sKey }, options, strict) => {
-	if (!isPlainObject(data)) throw new ValidationError(`expected object but got ${data}`, options);
-	const result = {};
-	for (const key in data) {
-		let rKey;
-		try {
-			rKey = Schema.resolve(key, sKey, options)[0];
-		} catch (error) {
-			if (strict) continue;
-			throw error;
-		}
-		result[rKey] = property(data, key, inner, options);
-		data[rKey] = data[key];
-		if (key !== rKey) delete data[key];
-	}
-	return [result];
-});
-Schema.extend("tuple", (data, { list }, options, strict) => {
-	if (!Array.isArray(data)) throw new ValidationError(`expected array but got ${data}`, options);
-	const result = list.map((inner, index) => property(data, index, inner, options));
-	if (strict) return [result];
-	result.push(...data.slice(list.length));
-	return [result];
-});
-function merge(result, data) {
-	for (const key in data) {
-		if (key in result) continue;
-		result[key] = data[key];
-	}
+var CANDIDATE_LABELS = {
+  typora: "Typora",
+  marktext: "MarkText",
+  vscode: "VS Code",
+  wps: "WPS Office"
+};
+function configuredSeed(config) {
+  return {
+    typora: config.typora.trim(),
+    marktext: config.marktext.trim(),
+    vscode: config.code.trim()
+  };
 }
-Schema.extend("object", (data, { dict }, options, strict) => {
-	if (!isPlainObject(data)) throw new ValidationError(`expected object but got ${data}`, options);
-	const result = {};
-	for (const key in dict) {
-		const value = property(data, key, dict[key], options);
-		if (!isNullable(value) || key in data) result[key] = value;
-	}
-	if (!strict) merge(result, data);
-	return [result];
-});
-Schema.extend("union", (data, { list, toString }, options, strict) => {
-	const messages = [];
-	for (const inner of list) try {
-		return Schema.resolve(data, inner, options, strict);
-	} catch (error) {
-		messages.push(error);
-	}
-	throw new ValidationError(`expected ${toString()} but got ${JSON.stringify(data)}`, options);
-});
-Schema.extend("intersect", (data, { list, toString }, options, strict) => {
-	if (!list.length) return [data];
-	let result;
-	for (const inner of list) {
-		const value = Schema.resolve(data, inner, options, true)[0];
-		if (isNullable(value)) continue;
-		if (isNullable(result)) result = value;
-		else if (typeof result !== typeof value) throw new ValidationError(`expected ${toString()} but got ${JSON.stringify(data)}`, options);
-		else if (typeof value === "object") merge(result ??= {}, value);
-		else if (result !== value) throw new ValidationError(`expected ${toString()} but got ${JSON.stringify(data)}`, options);
-	}
-	if (!strict && isPlainObject(data)) merge(result, data);
-	return [result];
-});
-Schema.extend("transform", (data, { inner, callback, preserve }, options) => {
-	const [result, adapted = data] = Schema.resolve(data, inner, options, true);
-	if (preserve) return [callback(result)];
-	else return [callback(result), callback(adapted)];
-});
-const formatters = {};
-function defineMethod(name, keys, format) {
-	formatters[name] = format;
-	Object.assign(Schema, { [name](...args) {
-		const schema = new Schema({ type: name });
-		keys.forEach((key, index) => {
-			switch (key) {
-				case "sKey":
-					schema.sKey = args[index] ?? Schema.string();
-					break;
-				case "inner":
-					schema.inner = Schema.from(args[index]);
-					break;
-				case "list":
-					schema.list = args[index].map(Schema.from);
-					break;
-				case "dict":
-					schema.dict = mapValues(args[index], Schema.from);
-					break;
-				case "bits":
-					schema.bits = {};
-					for (const key in args[index]) {
-						if (typeof args[index][key] !== "number") continue;
-						schema.bits[key] = args[index][key];
-					}
-					break;
-				case "callback": {
-					const callback = schema.callback = args[index];
-					callback["toJSON"] ||= () => callback.toString();
-					break;
-				}
-				case "constructor": {
-					const constructor = schema.constructor = args[index];
-					if (typeof constructor === "function") constructor["toJSON"] ||= () => constructor["name"];
-					break;
-				}
-				default: schema[key] = args[index];
-			}
-		});
-		if (name === "object" || name === "dict") schema.meta.default = {};
-		else if (name === "array" || name === "tuple") schema.meta.default = [];
-		else if (name === "bitset") schema.meta.default = 0;
-		return schema;
-	} });
+async function resolveConfiguredValue(value, signal) {
+  if (value.includes("/") || value.includes("\\")) return await pathExists(value) ? value : void 0;
+  try {
+    if (process.platform === "win32") {
+      const probe = `$c = Get-Command -Name ${powershellLiteral(value)} -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { $c.Source }`;
+      const result2 = await runNativeCommand2("powershell.exe", ["-NoProfile", "-Command", probe], signal);
+      const found2 = (result2.stdout ?? "").trim();
+      return found2 === "" ? void 0 : found2;
+    }
+    const result = await runNativeCommand2("which", [value], signal);
+    const found = (result.stdout ?? "").trim().split(/\r?\n/)[0];
+    return found === "" ? void 0 : found;
+  } catch {
+    return void 0;
+  }
 }
-defineMethod("is", ["constructor"], ({ constructor }) => {
-	if (typeof constructor === "function") return constructor.name;
-	else return constructor;
-});
-defineMethod("any", [], () => "any");
-defineMethod("never", [], () => "never");
-defineMethod("const", ["value"], ({ value }) => typeof value === "string" ? JSON.stringify(value) : value);
-defineMethod("string", [], () => "string");
-defineMethod("number", [], () => "number");
-defineMethod("boolean", [], () => "boolean");
-defineMethod("bitset", ["bits"], () => "bitset");
-defineMethod("function", [], () => "function");
-defineMethod("array", ["inner"], ({ inner }) => `${inner.toString(true)}[]`);
-defineMethod("dict", ["inner", "sKey"], ({ inner, sKey }) => `{ [key: ${sKey.toString()}]: ${inner.toString()} }`);
-defineMethod("tuple", ["list"], ({ list }) => `[${list.map((inner) => inner.toString()).join(", ")}]`);
-defineMethod("object", ["dict"], ({ dict }) => {
-	if (Object.keys(dict).length === 0) return "{}";
-	return `{ ${Object.entries(dict).map(([key, inner]) => {
-		return `${key}${inner.meta.required ? "" : "?"}: ${inner.toString()}`;
-	}).join(", ")} }`;
-});
-defineMethod("union", ["list"], ({ list }, inline) => {
-	const result = list.map(({ toString: format }) => format()).join(" | ");
-	return inline ? `(${result})` : result;
-});
-defineMethod("intersect", ["list"], ({ list }) => {
-	return `${list.map((inner) => inner.toString(true)).join(" & ")}`;
-});
-defineMethod("transform", [
-	"inner",
-	"callback",
-	"preserve"
-], ({ inner }, isInner) => inner.toString(isInner));
-//#endregion
-//#region lib/types/index.js
-/**
-* `dsh-workspace-files` host half: registers the `/workspace-files` RPC
-* channel that lists one directory level with file/directory kinds and opens
-* a filesystem path in a specific desktop application — VS Code for code,
-* MarkText for Markdown — on the connection transport. The shipped host
-* offers neither (its `host.listDirectory` lists directories only, and its
-* openers hand paths to the default application), so this channel is the
-* plugin's own surface; the client's default-app open still rides the
-* existing `host.openPath`.
-* @module @deepseek-ai/dsh-workspace-files
-*/
-const Config = Schema.object({
-	code: Schema.string().default("code"),
-	marktext: Schema.string().default("marktext")
-});
-/** Stable Cordis plugin name. */
-const name = "workspace-files";
-/** Required services: the connection transport's RPC registry. */
-const inject = ["connection"];
-/** Recover one validated `{ path }` request payload; undefined = malformed. */
+async function resolveSlotOpener(slot, state, config, signal) {
+  const entry = state.apps[slot];
+  if (entry !== void 0 && entry.enabled && entry.command.trim() !== "") {
+    return { command: entry.command, label: entry.label };
+  }
+  if (state.status === "off") return void 0;
+  const seed = configuredSeed(config);
+  const order = slot === "markdown" ? ["typora", "marktext"] : slot === "code" ? ["vscode"] : [];
+  for (const id of order) {
+    const value = seed[id];
+    if (value === void 0 || value === "") continue;
+    const command = await resolveConfiguredValue(value, signal);
+    if (command !== void 0) return { command, label: CANDIDATE_LABELS[id] ?? id };
+  }
+  return void 0;
+}
+function noOpenerMessage(slot) {
+  const what = slot === "markdown" ? "Markdown \u7F16\u8F91\u5668" : slot === "code" ? "\u4EE3\u7801\u7F16\u8F91\u5668" : "\u6587\u6863\u5E94\u7528";
+  return `\u6CA1\u6709\u914D\u7F6E\u53EF\u7528\u7684${what}\uFF1A\u8BF7\u5728\u672C\u63D2\u4EF6\u4FA7\u680F\u7684\u300C\u6253\u5F00\u65B9\u5F0F\u8BBE\u7F6E\u300D\u91CC\u9009\u62E9\u6216\u586B\u5199\u5BF9\u5E94\u8F6F\u4EF6\u7684\u542F\u52A8\u8DEF\u5F84`;
+}
+var name = "workspace-files";
+var inject = ["connection", "webServer"];
 function parsePath(payload) {
-	if (typeof payload !== "object" || payload === null) return void 0;
-	const path = payload.path;
-	return typeof path === "string" && path.length > 0 ? path : void 0;
+  if (typeof payload !== "object" || payload === null) return void 0;
+  const path = payload.path;
+  return typeof path === "string" && path.length > 0 ? path : void 0;
 }
-/** Recover a valid non-empty string field from a request payload. */
 function parseStringField(payload, key) {
-	if (typeof payload !== "object" || payload === null) return void 0;
-	const value = payload[key];
-	return typeof value === "string" && value.length > 0 ? value : void 0;
+  if (typeof payload !== "object" || payload === null) return void 0;
+  const value = payload[key];
+  return typeof value === "string" && value.length > 0 ? value : void 0;
 }
-/**
-* List one directory level: real files and directories only (symlinks,
-* sockets, and devices are skipped — a browser cannot open them in an
-* editor), directories first, each group name-sorted.
-* @param path - absolute directory to list.
-* @returns the level's file/directory rows.
-*/
 async function listDirectory(path) {
-	const dirents = await readdir(path, { withFileTypes: true });
-	const rows = [];
-	for (const dirent of dirents) {
-		if (!dirent.isDirectory() && !dirent.isFile()) continue;
-		rows.push({
-			name: dirent.name,
-			path: join(path, dirent.name),
-			kind: dirent.isDirectory() ? "dir" : "file",
-			hidden: dirent.name.startsWith(".")
-		});
-	}
-	rows.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "dir" ? -1 : 1);
-	return {
-		path,
-		entries: rows
-	};
+  const dirents = await readdir(path, { withFileTypes: true });
+  const rows = [];
+  for (const dirent of dirents) {
+    if (!dirent.isDirectory() && !dirent.isFile()) continue;
+    rows.push({
+      name: dirent.name,
+      path: join2(path, dirent.name),
+      kind: dirent.isDirectory() ? "dir" : "file",
+      hidden: dirent.name.startsWith(".")
+    });
+  }
+  rows.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "dir" ? -1 : 1);
+  return { path, entries: rows };
 }
-/** PowerShell single-quoted literal (doubles embedded quotes). */
 function powershellLiteral(value) {
-	return `'${value.replace(/'/g, "''")}'`;
+  return `'${value.replace(/'/g, "''")}'`;
 }
-/** Whether a native-command failure names a missing executable (en/zh PowerShell text). */
-const NOT_FOUND_RE = /not (recognized|found)|CommandNotFound|无法将.+识别为|不是内部或外部命令/;
-/**
-* Run one configured opener executable against a path, surfacing actionable
-* failures. Windows opens through PowerShell because common openers are
-* `.cmd` shims (`code` → `code.cmd`) that `execFile` cannot spawn directly;
-* PowerShell resolves both PATH names and absolute paths and invokes `.cmd`
-* via cmd.exe internally. macOS/Linux run the executable directly.
-*/
+var NOT_FOUND_RE = /not (recognized|found)|CommandNotFound|无法将.+识别为|不是内部或外部命令/;
 async function runOpener(command, path, signal) {
-	try {
-		if (process.platform === "win32") await runNativeCommand("powershell.exe", [
-			"-NoProfile",
-			"-Command",
-			`& ${powershellLiteral(command)} ${powershellLiteral(path)}`
-		], signal);
-		else await runNativeCommand(command, [path], signal);
-	} catch (error) {
-		if (signal.aborted) throw error;
-		const message = error instanceof Error ? error.message : String(error);
-		if (error?.code === "ENOENT" || NOT_FOUND_RE.test(message)) throw new Error(`找不到可执行程序 "${command}"：请确认已安装并加入 PATH，或在插件配置（cordis.patch.yml 的 workspace-files 行）中填写完整路径`);
-		throw error instanceof Error ? error : new Error(message);
-	}
+  try {
+    if (process.platform === "win32") {
+      await runNativeCommand2(
+        "powershell.exe",
+        ["-NoProfile", "-Command", `& ${powershellLiteral(command)} ${powershellLiteral(path)}`],
+        signal
+      );
+    } else {
+      await runNativeCommand2(command, [path], signal);
+    }
+  } catch (error) {
+    if (signal.aborted) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (error?.code === "ENOENT" || NOT_FOUND_RE.test(message)) {
+      throw new Error(
+        `\u627E\u4E0D\u5230\u53EF\u6267\u884C\u7A0B\u5E8F "${command}"\uFF1A\u8BF7\u786E\u8BA4\u5DF2\u5B89\u88C5\u5E76\u52A0\u5165 PATH\uFF0C\u6216\u5728\u63D2\u4EF6\u914D\u7F6E\uFF08cordis.patch.yml \u7684 workspace-files \u884C\uFF09\u4E2D\u586B\u5199\u5B8C\u6574\u8DEF\u5F84`
+      );
+    }
+    throw error instanceof Error ? error : new Error(message);
+  }
 }
-/**
-* Mount the `/workspace-files` RPC channel. Endpoints:
-* - `list` — one directory level with file/directory kinds (`{ path }` → {@link WorkspaceFilesListing})
-* - `open-in-code` — open a path in VS Code (`{ path }`)
-* - `open-in-marktext` — open a path in MarkText (`{ path }`)
-* The channel is loopback-only (the same trust fence as every `/api` request).
-* @param ctx - cordis context carrying the injected `connection` service.
-* @param config - validated opener executables.
-*/
+async function openWithDefaultApp(path, signal) {
+  if (process.platform === "win32") {
+    await runNativeCommand2(
+      "powershell.exe",
+      ["-NoProfile", "-Command", `Start-Process -FilePath ${powershellLiteral(path)}`],
+      signal
+    );
+    return;
+  }
+  await runNativeCommand2(process.platform === "darwin" ? "open" : "xdg-open", [path], signal);
+}
+var ROUTE_PATH = "/workspace-files";
+var MAX_BODY_BYTES = 64 * 1024;
+async function readJsonBody(request) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = chunk;
+    size += buffer.length;
+    if (size > MAX_BODY_BYTES) throw new Error("request body exceeds the route limit");
+    chunks.push(buffer);
+  }
+  if (chunks.length === 0) return void 0;
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+function writeJson(response, status, body) {
+  if (response.writableEnded || response.destroyed) return;
+  const payload = JSON.stringify(body);
+  response.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(payload)
+  });
+  response.end(payload);
+}
 function apply(ctx, config) {
-	const handler = async (endpoint, payload, signal) => {
-		if (endpoint === "list") {
-			const path = parseStringField(payload, "path");
-			if (path === void 0) return {
-				ok: false,
-				error: {
-					code: "internal",
-					message: "workspace-files: list requires a non-empty string path",
-					details: {}
-				}
-			};
-			try {
-				return {
-					ok: true,
-					value: await listDirectory(path)
-				};
-			} catch (error) {
-				if (signal.aborted) return {
-					ok: false,
-					error: {
-						code: "cancelled",
-						message: "directory listing was aborted",
-						details: {}
-					}
-				};
-				return {
-					ok: false,
-					error: {
-						code: "internal",
-						message: `workspace-files: 无法读取目录 ${path}: ${error instanceof Error ? error.message : String(error)}`,
-						details: {}
-					}
-				};
-			}
-		}
-		const path = parsePath(payload);
-		if (path === void 0) return {
-			ok: false,
-			error: {
-				code: "internal",
-				message: "workspace-files: request payload must carry a non-empty string path",
-				details: {}
-			}
-		};
-		const command = endpoint === "open-in-code" ? config.code : endpoint === "open-in-marktext" ? config.marktext : void 0;
-		if (command === void 0) return {
-			ok: false,
-			error: {
-				code: "internal",
-				message: `workspace-files: unknown endpoint ${endpoint}`,
-				details: {}
-			}
-		};
-		try {
-			await runOpener(command, path, signal);
-			return {
-				ok: true,
-				value: { opened: true }
-			};
-		} catch (error) {
-			if (signal.aborted) return {
-				ok: false,
-				error: {
-					code: "cancelled",
-					message: "path open was aborted",
-					details: {}
-				}
-			};
-			return {
-				ok: false,
-				error: {
-					code: "internal",
-					message: error instanceof Error ? error.message : String(error),
-					details: {}
-				}
-			};
-		}
-	};
-	ctx.effect(() => ctx.connection.rpc.handle("/workspace-files", handler, { authority: "loopback" }), "workspace-files: rpc channel");
+  ctx.inject(["webServer", "connection"], (webCtx) => {
+    const settle = (response, status, result) => {
+      writeJson(response, status, result.ok ? { ok: true, value: result.value } : { ok: false, error: { message: result.message } });
+    };
+    const route = {
+      kind: "prefix",
+      path: ROUTE_PATH,
+      handler: async (request, response) => {
+        const rejection = webCtx.connection.requestRejection(request);
+        if (rejection !== void 0) {
+          response.writeHead(rejection);
+          response.end(rejection === 401 ? "unauthorized" : "forbidden");
+          return;
+        }
+        if (request.method !== "POST") {
+          settle(response, 405, { ok: false, message: "workspace-files: this route accepts POST only" });
+          return;
+        }
+        const endpoint = new URL(request.url ?? "/", "http://127.0.0.1").pathname.slice(ROUTE_PATH.length + 1);
+        let payload;
+        try {
+          payload = await readJsonBody(request);
+        } catch (error) {
+          settle(response, 400, {
+            ok: false,
+            message: `workspace-files: malformed request body: ${error instanceof Error ? error.message : String(error)}`
+          });
+          return;
+        }
+        const controller = new AbortController();
+        response.once("close", () => {
+          if (!response.writableEnded) controller.abort();
+        });
+        const signal = controller.signal;
+        if (endpoint === "list") {
+          const path = parseStringField(payload, "path");
+          if (path === void 0) {
+            settle(response, 400, { ok: false, message: "workspace-files: list requires a non-empty string path" });
+            return;
+          }
+          try {
+            settle(response, 200, { ok: true, value: await listDirectory(path) });
+          } catch (error) {
+            settle(response, 500, {
+              ok: false,
+              message: `workspace-files: \u65E0\u6CD5\u8BFB\u53D6\u76EE\u5F55 ${path}: ${error instanceof Error ? error.message : String(error)}`
+            });
+          }
+          return;
+        }
+        if (endpoint === "state") {
+          try {
+            settle(response, 200, { ok: true, value: await loadState() });
+          } catch (error) {
+            settle(response, 500, { ok: false, message: error instanceof Error ? error.message : String(error) });
+          }
+          return;
+        }
+        if (endpoint === "scan") {
+          const deep = typeof payload?.deep === "boolean" && payload.deep === true;
+          try {
+            const result = await scanApps({ configured: configuredSeed(config), deep, signal });
+            settle(response, 200, { ok: true, value: result });
+          } catch (error) {
+            if (signal.aborted) {
+              settle(response, 499, { ok: false, message: "workspace-files: the request was aborted" });
+              return;
+            }
+            settle(response, 500, { ok: false, message: error instanceof Error ? error.message : String(error) });
+          }
+          return;
+        }
+        if (endpoint === "save") {
+          const saved = parseState(payload);
+          if (saved === void 0) {
+            settle(response, 400, { ok: false, message: "workspace-files: save requires a status and an apps map" });
+            return;
+          }
+          try {
+            await saveState(saved);
+            settle(response, 200, { ok: true, value: saved });
+          } catch (error) {
+            settle(response, 500, { ok: false, message: error instanceof Error ? error.message : String(error) });
+          }
+          return;
+        }
+        if (endpoint === "open-default" || endpoint === "open-in-code" || endpoint === "open-in-markdown" || endpoint === "open-in-office") {
+          const path = parsePath(payload);
+          if (path === void 0) {
+            settle(response, 400, { ok: false, message: `workspace-files: ${endpoint} requires a non-empty string path` });
+            return;
+          }
+          try {
+            if (endpoint === "open-default") {
+              await openWithDefaultApp(path, signal);
+            } else {
+              const slot = endpoint === "open-in-code" ? "code" : endpoint === "open-in-markdown" ? "markdown" : "office";
+              const state = await loadState();
+              const opener = await resolveSlotOpener(slot, state, config, signal);
+              if (opener === void 0) throw new Error(noOpenerMessage(slot));
+              await runOpener(opener.command, path, signal);
+            }
+            settle(response, 200, { ok: true, value: { opened: true } });
+          } catch (error) {
+            if (signal.aborted) {
+              settle(response, 499, { ok: false, message: "workspace-files: the request was aborted" });
+              return;
+            }
+            settle(response, 500, { ok: false, message: error instanceof Error ? error.message : String(error) });
+          }
+          return;
+        }
+        settle(response, 404, { ok: false, message: `workspace-files: unknown endpoint ${endpoint}` });
+      }
+    };
+    webCtx.effect(() => webCtx.webServer.register(route), "workspace-files: route");
+  });
 }
-//#endregion
-export { Config, apply, inject, name };
+export {
+  Config,
+  apply,
+  inject,
+  name
+};

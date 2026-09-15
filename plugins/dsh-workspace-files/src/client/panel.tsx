@@ -1,92 +1,121 @@
 /**
- * WorkspaceFilesPanel: the details-column occupant this plugin registers.
- * A tabbed panel — "Files" (the workspace file tree, rooted at the current
- * session's working directory) and "Tools" (the tool-call inspector). The
- * panel auto-opens the column is not its job: ui-conversation's inspect
- * gesture opens it, and this plugin's own registration wins the column the
- * moment it is open.
+ * WorkspaceFilesPanel: the right Sidebar's `files` tab body. The panel draws
+ * the current session's workspace file tree, rooted at that session's working
+ * directory; the tab strip owns opening, closing, and the chip title, so the
+ * panel carries no header of its own. It also owns the first-run setup: the
+ * plugin asks once which applications it may drive, and until that answer
+ * exists the tree behaves like the shipped one.
  */
 
 import { useEffect, useState } from 'react'
-import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { WorkspaceFilesPanelProps } from './contract.ts'
-import { FileTree } from './files-tree.tsx'
-import { ToolDetails } from './tool-details.tsx'
+import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
+import type { WorkspaceFilesPanelProps, WorkspaceFilesState } from './contract.ts'
+import { FileTree, type SlotOpeners } from './files-tree.tsx'
+import { SetupDialog } from './setup-dialog.tsx'
 import css from './WorkspaceFilesPanel.module.css'
 
-type Tab = 'files' | 'tool'
-
-/** Full composed props: the details runtime share, the locale seat, and the inject face. */
+/** Full composed props: the tab runtime share, the locale seat, and the inject face. */
 export type PanelProps = WorkspaceFilesPanelProps
 
-/** The tabbed details panel. */
+/** One slot's display label, when the user enabled it and it carries a path. */
+function openerLabel(
+  state: WorkspaceFilesState | null,
+  slot: 'markdown' | 'code' | 'office',
+): string | undefined {
+  const entry = state?.apps[slot]
+  return entry !== undefined && entry.enabled && entry.command.trim() !== '' ? entry.label : undefined
+}
+
+/** The workspace file tree tab body. */
 export function WorkspaceFilesPanel(props: WorkspaceFilesPanelProps) {
   const {
-    useSessions, useSession, sessionId, t,
-    openDetails, closeDetails, list, openPath, openInCode, openInMarktext,
+    useSessions, useTabInfo, sessionId, t,
+    list, readState, scanApps, saveState, openPath, openInCode, openInMarkdown, openInOffice,
   } = props
   // Session workspace root: the file tree's base. An omitted cwd (blank
   // session) renders the empty state rather than a fabricated root.
   const cwd = useSessions(store => store.byId[sessionId]?.cwd)
-  const [tab, setTab] = useState<Tab>('files')
+  const { tab } = useTabInfo()
+  const [state, setState] = useState<WorkspaceFilesState | null>(null)
+  const [setupOpen, setSetupOpen] = useState(false)
 
-  // The column opens for the session that mounts this panel (the user asked
-  // for the file browser beside every conversation); closing it keeps it
-  // closed for that session, and the next session's remount opens it again.
-  useEffect(() => { openDetails() }, [openDetails])
+  useEffect(() => {
+    const controller = new AbortController()
+    void readState(controller.signal).then(
+      (stored) => {
+        if (controller.signal.aborted) return
+        setState(stored)
+        // The first open is the only moment the plugin may ask: show the wizard
+        // before the tree can advertise an opener the user never chose.
+        if (stored.status === 'pending') setSetupOpen(true)
+      },
+      () => {
+        // An unreadable state means no answer exists: behave like the shipped
+        // tree rather than promising openers this plugin cannot verify.
+        if (!controller.signal.aborted) setState({ version: 1, status: 'off', apps: {} })
+      },
+    )
+    return () => { controller.abort() }
+  }, [readState])
+
+  /**
+   * Open one file in the Sidebar's own viewers. The address names the file
+   * through this session, so the resource model resolves it against the same
+   * workspace root this tree lists — the shipped tree's headline behaviour,
+   * kept alongside the desktop openers.
+   */
+  const openPreview = (path: string): void => {
+    tab.actions.openResource(sessionFileAddress(sessionId, path.replace(/\\/g, '/')))
+  }
+
+  const openers: SlotOpeners = {
+    markdown: openerLabel(state, 'markdown'),
+    code: openerLabel(state, 'code'),
+    office: openerLabel(state, 'office'),
+  }
+  // No answer yet (or an explicit "configure nothing") keeps this plugin out of
+  // the way: rows then do exactly what the shipped tree does.
+  const passThrough = state === null || state.status !== 'ready'
 
   return (
     <div className={css.root}>
-      <header className={css.header}>
-        <div className={css.tabs} role="tablist" aria-label={t('panel.title')}>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'files'}
-            className={tab === 'files' ? `${css.tab} ${css.tabActive}` : css.tab}
-            onClick={() => { setTab('files') }}
-          >
-            {t('tab.files')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'tool'}
-            className={tab === 'tool' ? `${css.tab} ${css.tabActive}` : css.tab}
-            onClick={() => { setTab('tool') }}
-          >
-            {t('tab.tool')}
+      <div className={css.body}>
+        {cwd === undefined
+          ? <div className={css.empty}>{t('tree.empty')}</div>
+          : (
+            <FileTree
+              key={cwd}
+              root={cwd}
+              list={list}
+              openPath={openPath}
+              openInCode={openInCode}
+              openInMarkdown={openInMarkdown}
+              openInOffice={openInOffice}
+              openers={openers}
+              passThrough={passThrough}
+              onConfigure={() => { setSetupOpen(true) }}
+              openPreview={openPreview}
+              t={t}
+            />
+          )}
+      </div>
+      {state?.status === 'off' && (
+        <div className={css.notice}>
+          <span className={css.noticeText}>{t('setup.offNotice')}</span>
+          <button type="button" className={css.inlineButton} onClick={() => { setSetupOpen(true) }}>
+            {t('setup.offReopen')}
           </button>
         </div>
-        <button
-          type="button"
-          className={css.close}
-          aria-label={t('panel.close')}
-          title={t('panel.close')}
-          onClick={() => { closeDetails() }}
-        >
-          <IconCloseOutline16 />
-        </button>
-      </header>
-      <div className={css.body}>
-        {tab === 'files'
-          ? (
-            cwd === undefined
-              ? <div className={css.empty}>{t('tree.empty')}</div>
-              : (
-                <FileTree
-                  key={cwd}
-                  root={cwd}
-                  list={list}
-                  openPath={openPath}
-                  openInCode={openInCode}
-                  openInMarktext={openInMarktext}
-                  t={t}
-                />
-              )
-          )
-          : <ToolDetails useSession={useSession} t={t} />}
-      </div>
+      )}
+      <SetupDialog
+        open={setupOpen}
+        state={state}
+        t={t}
+        scan={scanApps}
+        save={saveState}
+        onSaved={(stored) => { setState(stored); setSetupOpen(false) }}
+        onClose={() => { setSetupOpen(false) }}
+      />
     </div>
   )
 }

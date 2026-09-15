@@ -2,84 +2,117 @@
 
 工作区文件浏览器 —— 一个**可选的 profile 插件**，不包含在 harness 的 `dsh-base` / `dsh-web-app` 发布 bundle 里。
 
-在 Web 界面的对话右侧（`details` 栏）显示当前会话工作区的文件目录树：
+> **兼容性：适配 DeepSeek Harness 0.1.6**（在 `0.1.6-alpha.1` 上实测运行）。
+> 0.1.5 时代的实现（shadow `details` 槽位 + `ctx.connection.rpc.handle()`）已不再使用：
+> 现在靠 `ctx.sidebarRightTabs.register()` 接管右侧边栏页签，并自建 `/workspace-files` 前缀路由。
 
-- **代码/脚本文件**（`.ts/.tsx/.py/.vue/.json/...`、`Dockerfile`、`.env*` 等）→ 单击在 **VS Code** 中打开
-- **Markdown 文件**（`.md/.markdown/...`）→ 单击用 **MarkText** 打开
-- **其它文件** → 默认应用打开；每个文件还有"⋯"菜单可任选三种打开方式
-- 目录懒加载展开；隐藏文件（点开头）默认过滤，可切换显示
-- 第二个"工具"页签列出当前会话窗口内的工具调用，可查看输入/输出
+在 Web 界面右侧边栏的「工作区文件」页签里显示当前会话工作区的目录树：
 
-## 为什么是插件（与 harness 本体的关系）
+- **接管内置页签**：扩展注册覆盖内置的 `files` 类型（一个 kind 至多一个 builtin + 一个 extension，extension 生效），引导页只留一条入口，不会出现两个近乎相同的树。
+- **双击打开**（单击不触发，避免误点就弹出外部软件），按文件类型路由：
+
+  | 文件类型 | 打开方式 |
+  |---|---|
+  | Markdown（`.md/.markdown/.mdown/.mkd`） | 配置的 Markdown 编辑器（**Typora 优先，其次 MarkText**） |
+  | 文档（`.doc/.docx/.xls/.xlsx/.ppt/.pptx/.pdf/.txt/.csv/.rtf` 等） | 配置的 **WPS Office** |
+  | 代码/脚本（`.ts/.tsx/.py/.vue/.json/...`、`Dockerfile`、`.env*` 等） | 配置的 **VS Code** |
+  | 其它 | 系统默认应用 |
+
+- **「⋯」菜单**：与左侧工作区同款的**贴按钮弹出菜单**（ui-primitives 的 `Menu`），内容 = 在侧栏预览 / 用 Markdown 编辑器打开 / 用 WPS 打开 / 用 VS Code 打开 / 用默认应用打开，只列出已配置的软件。
+- **首次运行设置向导**：第一次打开页签时弹窗询问是否允许自动查找本机这几个软件的启动路径，找不到可以手填；什么都不配置则本插件对 Harness 的文件打开行为**零影响**（详见下节）。
+- 目录懒加载展开；隐藏文件（点开头）默认过滤、可切换；打开失败时树底部给出错误条与「重试 / 改用默认应用打开」（**打开成功不显示任何加载提示**）。
+
+## 打开方式设置（首次运行向导）
+
+第一次打开页签时自动弹出，之后可随时用树工具栏的**齿轮按钮**重新打开。
+
+```
+第一步  是否允许自动查找电脑上的 Typora / MarkText / WPS Office / VS Code 的启动路径？
+        [不配置，保持原样]  [我自己填写路径]  [自动查找]
+                    ↓ 自动查找
+第二步  每行 = 勾选框 + 可编辑路径
+        ☑ Typora      D:\Typora\Typora\Typora.exe
+        ☐ MarkText    （未找到可手填）
+        ☑ VS Code     E:\VScode\Microsoft VS Code\bin\code.cmd
+        ☐ WPS Office  （未找到可手填）
+        [不配置，保持原样]  [再全盘找一次]  [保存]
+```
+
+- **查找顺序**：插件配置值 → `PATH` → 常见安装位置（含各盘根目录，能认出 `D:\Typora\Typora\Typora.exe` 这类自定义安装）→ 注册表（`Uninstall` + `App Paths`）→（点「再全盘找一次」时）全盘 BFS。全盘只作为兜底，带 90 秒 / 12 万目录上限并跳过 `windows`、`node_modules`、`$Recycle.Bin` 等目录，可随时取消。
+- **两个 md 编辑器都勾选时优先 Typora**；没找到的软件直接手填绝对路径（或 PATH 名字）即可。
+- **「不配置，保持原样」**：所有路径留空且不勾选时，本插件**不接管文件打开行为** —— 行变成内置样式（单击 + 系统默认应用、没有「⋯」菜单），树底部提示可重新设置。
+- 设置结果存到 `$DSH_HOME/workspace-files/config.json`（默认 `~/.dsh/workspace-files/config.json`），三个槽位：`markdown` / `code` / `office`。
+
+## 与 harness 更新解耦的机制
 
 | 层面 | 实现 | 与更新的关系 |
 |---|---|---|
-| **发布 bundle** | 不在 `dsh-base` / `dsh-web-app` 的 `cordis.patch.yml` 中，**没有任何内置 profile 模板引用它** | harness 更新不会自动启用/关闭它 |
-| **服务端半部** | 一个独立 cordis 插件，注册自己的 `/workspace-files` RPC 通道 | 通过 profile 的 `cordis.patch.yml` 挂载，与核心并行 |
-| **浏览器半部** | `dsh.client` 包，前端 bundle 在运行时动态加载（`/plugins/<id>/client.js`），**不编译进主程序** | 前端 bundle 由 `dsh.client` 扫描器按 package 发现 |
-| **安装位置** | `$DSH_HOME/profiles/web/node_modules`（`dsh plugin` 管理） | harness 的 `git pull` / 重新构建不会触碰它 |
+| **发布 bundle** | 不在 `dsh-base` / `dsh-web-app` 的 `cordis.patch.yml` 中，没有任何内置 profile 模板引用它 | harness 更新不会自动启用/关闭它 |
+| **宿主端** | 独立 cordis 插件，靠 `ctx.inject(['webServer','connection'])` 注册自己的 `/workspace-files` 前缀路由（0.1.5+ 起 `ctx.connection.rpc.handle()` 对第三方插件不可用） | 通过 profile 的 `cordis.patch.yml` 挂载，与核心并行 |
+| **浏览器端** | 预编译的闭包工厂 bundle，运行时按 `dsh.client` 清单加载；只依赖平台模块表（`react` / `cordis` / `ui-slots` / `ui-primitives` 等） | harness 前端版本演进不与它产生符号冲突 |
+| **安装位置** | `$DSH_HOME/profiles/web/node_modules/@deepseek-ai/dsh-workspace-files` | harness 升级不会触碰它 |
 
-前端使用 slots 机制把 shipped 的 DetailsPanel 以负优先级 shadow 掉（面板自身提供"文件/工具"双页签，工具详情功能保留）；不修改任何 shipped 插件的源码。
+> **依赖规则（重要）**：插件只把**宿主不提供的包**（本插件没有这类依赖）写进 `dependencies`；
+> 凡是 `@deepseek-ai/*` 宿主已装的包（`dsh-tools`、`dsh-invariants`、`dsh-native-command`、
+> `dsh-system-prompt`、`schemastery`…）只能放 `devDependencies`。
+> 否则 pnpm 会在 profile 里再装一份副本，导致**同一个模块被加载两次**（两份不同的 `Symbol`），
+> 表现为所有工具调用直接崩：`Cannot read properties of undefined (reading 'prepare')`。
 
-## 安装（web profile）
+## 构建与安装（本仓库自包含，不依赖 harness monorepo）
 
-在仓库根目录执行（路径含空格时建议先建一个无空格 junction，如 `d:\dsh-wf-link`）：
+harness 0.1.5 起客户端插件必须是预编译产物（宿主端 `lib/index.js` + 浏览器端 `lib/client.js`），
+而官方 `clientBundle` 预设只存在于 harness 仓库内，所以本仓库自带等价的构建器
+`build/client-bundle.mjs`（esbuild + lightningcss）。
 
 ```powershell
-# 1) 构建插件（host + client 两个面；产物在 packages/extensions/dsh-workspace-files/lib）
-node --import tsx/esm apps/cli/src/bin.ts --help  # 确认 CLI 可用
-pnpm exec tsc -b packages/extensions/dsh-workspace-files
-pnpm exec tsdown --env.DSH_BUILD_FACE host --filter @deepseek-ai/dsh-workspace-files
-$env:DSH_BUILD_FACE='client'; pnpm --filter @deepseek-ai/dsh-workspace-files run bundle
+# 1) 插件目录内装一次依赖（类型包 + esbuild/lightningcss）
+cd E:\DSH\plugins\dsh-workspace-files
+npm install --no-audit --no-fund              # ssh-files 那种带 ssh2 的插件需加 --legacy-peer-deps
+npm approve-scripts esbuild@0.28.2            # npm 11 默认拦截安装脚本
 
-# 2) 安装到 web profile（link: 用符号链接，仓库重构建后立即生效；file: 用副本）
-node --import tsx/esm apps/cli/src/bin.ts plugin --profile web add "link:d:/dsh-wf-link"
+# 2) 构建（宿主端打包本地模块；客户端产出 __ModuleLoader__ 闭包工厂）
+node E:\DSH\build\client-bundle.mjs E:\DSH\plugins\dsh-workspace-files
 
-# 3) 重启 dsh web 服务即可
+# 3) 首次安装到 web profile（需要 pnpm，可 corepack enable 获取）
+dsh plugin --profile web add file:E:/DSH/plugins/dsh-workspace-files
+
+# 4) 以后每次改动：构建 + 部署一步到位，然后重启 dsh web
+powershell -File E:\DSH\scripts\deploy-plugin.ps1 dsh-workspace-files
 ```
 
-`dsh plugin add` 会自动把该包加入 `dsh.profile.bundles`（因为它声明了 `dsh.bundle`），其 `cordis.patch.yml` 会挂载 `workspace-files` 行；浏览器半部由 `dsh.client` 扫描器自动进入 `window.__DSH_BOOT__`。
+`deploy-plugin.ps1` 会调用构建器，再把 `lib/`、`cordis.patch.yml`、`package.json`
+拷进 `~/.dsh/profiles/web/node_modules/@deepseek-ai/dsh-workspace-files`
+（profile 里装的是**拷贝**而不是软链，所以每次重建都要重新部署一次）。
 
-验证：
+宿主端必须 `bundle: true` + `packages: 'external'`，否则 `lib/index.js` 里会残留
+`./setup.ts` 之类的导入，装进 profile 后直接 `ERR_MODULE_NOT_FOUND`。
 
-```powershell
-# 组合配置里应出现 workspace-files 行
-node --import tsx/esm apps/cli/src/bin.ts --profile web --dump-config | Select-String workspace-files
-# 前端 bundle 被服务
-Invoke-WebRequest 'http://127.0.0.1:3080/plugins/@deepseek-ai%2Fdsh-workspace-files/client.js'
-# 列目录 RPC
-$b = '{"type":"client-request","rpcId":"t","method":"list","payload":{"path":"d:/"}}'
-Invoke-WebRequest 'http://127.0.0.1:3080/workspace-files/list' -Method Post -Body $b -ContentType 'application/json'
+## 配置
+
+插件配置项（`cordis.patch.yml` 的 `workspace-files-tab` 行）现在是**查找种子与兜底**：
+向导写进 `config.json` 的路径优先，没有配置时才回退到这三个值。
+
+```yaml
+- id: workspace-files-tab
+  config:
+    code: code                      # VS Code 可执行文件（PATH 名或绝对路径）
+    typora: typora                  # Typora，未装则回退 marktext
+    marktext: marktext              # MarkText
 ```
 
 ## 卸载
 
 ```powershell
-node --import tsx/esm apps/cli/src/bin.ts plugin --profile web remove @deepseek-ai/dsh-workspace-files
+dsh plugin --profile web remove @deepseek-ai/dsh-workspace-files
 ```
 
-## 配置打开程序
+设置文件不在 profile 里，需要的话手动删 `~/.dsh/workspace-files/config.json`
+（删掉后下次打开页签会重新走首次设置向导）。
 
-`code` / `marktext` 默认按 PATH 解析（Windows 上会经 PowerShell 桥接，兼容 `code.cmd` 这类 shim）。可执行文件不在 PATH 时，在 `$DSH_HOME/profiles/web/cordis.patch.yml` 里覆盖：
+## 版本记录
 
-```yaml
-- id: workspace-files
-  config:
-    code: 'D:\Microsoft VS Code\bin\code.cmd'
-    marktext: 'C:\Program Files\MarkText\MarkText.exe'
-```
-
-## 与 harness 更新解耦的机制
-
-- 插件行由 profile 层的补丁挂载，不写进任何 shipped bundle 的 `cordis.patch.yml`；
-- 浏览器 bundle 是运行时动态 fetch 的闭包工厂（`window.__ModuleLoader__.load({id, factory})`），只依赖模块表中的 `react` / `cordis` / `ui-slots` / `ui-primitives`（基线常驻），不内联任何 shipped 包，所以 harness 前端版本演进不会与它产生符号冲突；
-- 它占用的 `details` 槽位是 ui-layout 声明的公开扩展点；shadow 语义（负优先级）是 slots 系统文档化的行为。
-
-## 抽离为仓库外独立项目
-
-当前包位于仓库内（`packages/extensions/dsh-workspace-files`）是为了借用仓库的 tsdown `clientBundle` 预设可靠地产出两端产物；运行时它已是 profile 级插件，与核心完全解耦。若要在物理上移出仓库：
-
-1. 把 `src/`、`cordis.patch.yml`、`package.json`、`tsdown.config.ts` 复制到独立仓库；
-2. 在独立项目里复制 `packages/client/tsdown.client.ts` 的 `clientBundle` 预设（约 150 行），或改用等价的 rollup/esbuild 配置产出闭包工厂 bundle；
-3. `package.json` 的 `workspace:*` 依赖改为 npm 发布版或 `file:` 指向 harness 的 node_modules（npm 上 `@deepseek-ai/*` 目前只有 `0.0.1-rc.1` 旧版，建议直接 `link:` 本地）；
-4. 发布后即可 `dsh plugin add <npm包名>`。
+- **0.2.0** — 适配 **harness 0.1.6**：右侧边栏页签接管（`sidebarRightTabs`）、
+  双击打开、按类型路由（Markdown / 文档 / 代码）、贴按钮的「⋯」打开方式菜单、
+  首次运行设置向导（查找 / 手填 / 零影响三选一）、去掉打开时的加载提示。
+  依赖规则修正：宿主自带包只放 `devDependencies`（避免模块双实例）。
+- **0.1.0** — 初版：shadow `details` 槽位的文件/工具双页签（harness 0.1.0–0.1.5 时代写法，已废弃）。

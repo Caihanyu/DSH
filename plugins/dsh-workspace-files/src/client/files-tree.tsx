@@ -1,32 +1,59 @@
 /**
  * FileTree: the files tab's lazy, expandable directory tree. Rows load one
  * directory level at a time through the injected `list` (abort-guarded),
- * directories expand on click, files open through the extension-routed
- * primary opener (Markdown → MarkText, code → VS Code, everything else →
- * the default app) or through the per-row "open with…" menu. Hidden
- * dot-entries are filtered client-side behind a toggle.
+ * directories expand on click, and files open on **double click** through the
+ * slot opener its kind routes to (Markdown → the configured Markdown editor,
+ * documents → the configured office suite, code → the configured code editor,
+ * everything else → the default app). A row's "⋯" button opens an **anchored
+ * open-with menu** — the same `Menu` primitive the workspace's own "⋯" menus
+ * use. When the user configured no application at all (`passThrough`), rows
+ * behave exactly like the shipped tree: one click, default application, no
+ * menu and no routing. Hidden dot-entries are filtered behind a toggle.
  */
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  IconChevronDownOutline14, IconChevronRightOutline14, IconCloseOutline16,
-  IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16, IconRefreshOutline14,
+  IconBrowseOutline16, IconChevronDownOutline14, IconChevronRightOutline14, IconCloseOutline16,
+  IconCodeOutline16, IconEditOutline16, IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16,
+  IconRefreshOutline14, IconRightUpOutline16, IconSettingsOutline14, Menu, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { WorkspaceFilesEntry, WorkspaceFilesTranslate } from './contract.ts'
+import type {
+  MarkdownOpener, WorkspaceFilesEntry, WorkspaceFilesTranslate,
+} from './contract.ts'
 import css from './WorkspaceFilesPanel.module.css'
+
+/** Display names of the slot openers the tree can route to, when configured. */
+export interface SlotOpeners {
+  /** Configured Markdown editor label. */
+  markdown?: string | undefined
+  /** Configured code-editor label. */
+  code?: string | undefined
+  /** Configured office-suite label. */
+  office?: string | undefined
+}
 
 /** Props the panel passes to the tree: the injected openers plus the root path. */
 export interface FileTreeProps {
   /** Absolute workspace root of the current session. */
   root: string
-  /** List one directory level through the `/workspace-files` channel. */
+  /** List one directory level through the `/workspace-files` route. */
   list: (path: string, signal?: AbortSignal) => Promise<import('./contract.ts').WorkspaceFilesListing>
   /** Open a path with the operating system's default application. */
   openPath: (path: string) => Promise<void>
-  /** Open a path in VS Code (the configured `code` executable). */
+  /** Open a path through the configured code-editor slot. */
   openInCode: (path: string) => Promise<void>
-  /** Open a path in MarkText (the configured `marktext` executable). */
-  openInMarktext: (path: string) => Promise<void>
+  /** Open a path through the configured Markdown-editor slot. */
+  openInMarkdown: (path: string) => Promise<void>
+  /** Open a path through the configured office-suite slot. */
+  openInOffice: (path: string) => Promise<void>
+  /** Configured application labels by slot (absent = the slot has no application). */
+  openers: SlotOpeners
+  /** Whether the user configured nothing, making rows behave like the shipped tree. */
+  passThrough: boolean
+  /** Open the open-with settings dialog. */
+  onConfigure: () => void
+  /** Open a path as a Sidebar resource, in the panel's own viewers. */
+  openPreview: (path: string) => void
   /** Localized copy. */
   t: WorkspaceFilesTranslate
 }
@@ -47,6 +74,11 @@ const CODE_BASENAMES = new Set([
   '.gitignore', '.gitattributes', '.gitmodules', '.dockerignore', '.npmrc',
   '.yarnrc', '.pypirc', '.eslintrc', '.prettierrc', 'license', 'copying',
 ])
+/** Document extensions the configured office suite takes over. */
+const OFFICE_EXTENSIONS = new Set([
+  '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.pdf',
+  '.txt', '.csv', '.rtf', '.wps', '.et', '.dps',
+])
 
 /** Lower-cased extension of a base name (empty when it has none). */
 function extensionOf(name: string): string {
@@ -55,9 +87,10 @@ function extensionOf(name: string): string {
 }
 
 /** File presentation category: drives the primary opener and the row glyph. */
-function fileKindOf(name: string): 'markdown' | 'code' | 'other' {
+function fileKindOf(name: string): 'markdown' | 'office' | 'code' | 'other' {
   const ext = extensionOf(name)
   if (MARKDOWN_EXTENSIONS.has(ext)) return 'markdown'
+  if (OFFICE_EXTENSIONS.has(ext)) return 'office'
   if (CODE_EXTENSIONS.has(ext)) return 'code'
   const lower = name.toLowerCase()
   // `.env` and its per-environment twins (`.env.local`, `.env.example`) are
@@ -66,13 +99,22 @@ function fileKindOf(name: string): 'markdown' | 'code' | 'other' {
   return 'other'
 }
 
+/** Base name of an absolute path, for the menu heading. */
+function basenameOf(path: string): string {
+  const trimmed = path.endsWith('/') || path.endsWith('\\') ? path.slice(0, -1) : path
+  const sep = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  return sep === -1 ? trimmed : trimmed.slice(sep + 1)
+}
+
 /** Small colored document glyph keyed by the file's presentation category. */
-function FileGlyph({ kind }: { kind: 'markdown' | 'code' | 'other' }) {
+function FileGlyph({ kind }: { kind: 'markdown' | 'office' | 'code' | 'other' }) {
   const color = kind === 'markdown'
     ? 'var(--dsw-alias-state-info-primary, #3b82f6)'
-    : kind === 'code'
-      ? 'var(--dsw-alias-state-success-primary, #22c55e)'
-      : 'var(--dsw-alias-label-tertiary, #94a3b8)'
+    : kind === 'office'
+      ? 'var(--dsw-alias-state-warning-primary, #f59e0b)'
+      : kind === 'code'
+        ? 'var(--dsw-alias-state-success-primary, #22c55e)'
+        : 'var(--dsw-alias-label-tertiary, #94a3b8)'
   return (
     <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden className={css.fileGlyph}>
       <path
@@ -88,24 +130,30 @@ function FileGlyph({ kind }: { kind: 'markdown' | 'code' | 'other' }) {
   )
 }
 
-/** One per-tree transient open failure, with the path it applies to. */
+/** One per-tree transient open failure, with the path (and opener) it applies to. */
 interface OpenFailure {
   path: string
   message: string
+  /** Re-run exactly the opener that failed. */
+  retry: () => void
 }
 
 /**
  * The file tree. Owns all tree state (loaded levels, expansion, hidden
- * toggle, the open menu, and in-flight open feedback); renders recursively.
+ * toggle, the open-with menu's target, and in-flight open feedback);
+ * renders recursively.
  */
-export function FileTree({ root, list, openPath, openInCode, openInMarktext, t }: FileTreeProps) {
+export function FileTree({
+  root, list, openPath, openInCode, openInMarkdown, openInOffice, openers, passThrough,
+  onConfigure, openPreview, t,
+}: FileTreeProps) {
   const [levels, setLevels] = useState<Record<string, import('./contract.ts').WorkspaceFilesListing>>({})
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ [root]: true })
   const [loading, setLoading] = useState<Record<string, boolean>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showHidden, setShowHidden] = useState(false)
-  const [menuPath, setMenuPath] = useState<string | null>(null)
-  const [busyPath, setBusyPath] = useState<string | null>(null)
+  /** The file whose open-with menu is showing (null = closed). */
+  const [menuEntry, setMenuEntry] = useState<WorkspaceFilesEntry | null>(null)
   const [failure, setFailure] = useState<OpenFailure | null>(null)
   const aborters = useRef(new Map<string, AbortController>())
 
@@ -158,36 +206,91 @@ export function FileTree({ root, list, openPath, openInCode, openInMarktext, t }
     setErrors({})
     setLoading({})
     setExpanded({ [root]: true })
-    setMenuPath(null)
+    setMenuEntry(null)
     setFailure(null)
     ensureLoaded(root)
   }
 
+  /**
+   * Launch one file with one opener. The row itself carries no progress state:
+   * a launch that fails reports through the banner below the tree, and a launch
+   * that succeeds needs no acknowledgement at all.
+   */
   const runOpen = (entry: WorkspaceFilesEntry, opener: (path: string) => Promise<void>): void => {
-    setBusyPath(entry.path)
     setFailure(null)
     void opener(entry.path).then(
-      () => { setBusyPath(null) },
+      () => undefined,
       (reason: unknown) => {
-        setBusyPath(null)
-        setFailure({ path: entry.path, message: reason instanceof Error ? reason.message : String(reason) })
+        setFailure({
+          path: entry.path,
+          message: reason instanceof Error ? reason.message : String(reason),
+          retry: () => { runOpen(entry, opener) },
+        })
       },
     )
   }
 
-  const primaryOpener = (entry: WorkspaceFilesEntry): ((path: string) => Promise<void>) | null => {
-    if (entry.kind === 'dir') return null
+  /**
+   * The opener one file's kind routes to, with the label its row advertises.
+   * A kind without a configured application falls back to the next sensible
+   * slot and finally to the system default, so a half-configured machine still
+   * opens every file.
+   */
+  const primaryAction = (entry: WorkspaceFilesEntry): { run: () => void, label: string } => {
     const kind = fileKindOf(entry.name)
-    if (kind === 'markdown') return openInMarktext
-    if (kind === 'code') return openInCode
-    return openPath
+    const markdown = openers.markdown
+    const office = openers.office
+    const code = openers.code
+    if (kind === 'markdown' && markdown !== undefined) {
+      return { run: () => { runOpen(entry, openInMarkdown) }, label: t('file.openWith', { app: markdown }) }
+    }
+    if (kind === 'office' && office !== undefined) {
+      return { run: () => { runOpen(entry, openInOffice) }, label: t('file.openWith', { app: office }) }
+    }
+    if (kind === 'code' && code !== undefined) {
+      return { run: () => { runOpen(entry, openInCode) }, label: t('file.openWith', { app: code }) }
+    }
+    if (kind === 'markdown' && code !== undefined) {
+      return { run: () => { runOpen(entry, openInCode) }, label: t('file.openWith', { app: code }) }
+    }
+    return { run: () => { runOpen(entry, openPath) }, label: t('file.openDefault') }
   }
 
-  const primaryLabel = (entry: WorkspaceFilesEntry): string => {
-    const kind = fileKindOf(entry.name)
-    if (kind === 'markdown') return t('file.openMarktext')
-    if (kind === 'code') return t('file.openCode')
-    return t('file.openDefault')
+  /**
+   * Rows of one file's "⋯" menu: every way this plugin can hand the path to an
+   * application. Every configured slot appears — an open-with menu is exactly
+   * where a user looks to override the kind's default — and a slot the user
+   * turned off stays out of the list.
+   */
+  const menuItems = (entry: WorkspaceFilesEntry): MenuEntry[] => {
+    const entries: MenuEntry[] = [
+      { id: 'preview', label: t('file.openPreview'), icon: <IconBrowseOutline16 /> },
+      { type: 'separator', id: 'openers' },
+    ]
+    if (openers.markdown !== undefined) {
+      entries.push({ id: 'markdown', label: t('file.openWith', { app: openers.markdown }), icon: <IconEditOutline16 /> })
+    }
+    if (openers.office !== undefined) {
+      entries.push({ id: 'office', label: t('file.openWith', { app: openers.office }), icon: <IconEditOutline16 /> })
+    }
+    if (openers.code !== undefined) {
+      entries.push({ id: 'code', label: t('file.openWith', { app: openers.code }), icon: <IconCodeOutline16 /> })
+    }
+    entries.push({ id: 'default', label: t('file.openDefault'), icon: <IconRightUpOutline16 /> })
+    return entries
+  }
+
+  /** Run one menu action for a row, closing the menu first so the launch feels immediate. */
+  const runMenuAction = (entry: WorkspaceFilesEntry, action: string): void => {
+    setMenuEntry(null)
+    if (action === 'preview') {
+      openPreview(entry.path)
+      return
+    }
+    if (action === 'markdown') runOpen(entry, openInMarkdown)
+    else if (action === 'office') runOpen(entry, openInOffice)
+    else if (action === 'code') runOpen(entry, openInCode)
+    else runOpen(entry, openPath)
   }
 
   const renderLevel = (path: string, depth: number): ReactNode => {
@@ -241,45 +344,73 @@ export function FileTree({ root, list, openPath, openInCode, openInMarktext, t }
               </Fragment>
             )
           }
-          const primary = primaryOpener(entry)
+          const action = primaryAction(entry)
+          if (passThrough) {
+            // Nothing is configured, so the row behaves exactly like the shipped
+            // tree: one click, system default application, no menu, no routing.
+            return (
+              <Fragment key={entry.path}>
+                <button
+                  type="button"
+                  className={`${css.row} ${css.rowButton}`}
+                  style={pad}
+                  data-file
+                  title={`${entry.path}\n${t('file.singleHint', { action: action.label })}`}
+                  onClick={() => { action.run() }}
+                >
+                  <span className={css.rowSpacer} />
+                  <FileGlyph kind={fileKindOf(entry.name)} />
+                  <span className={css.rowName}>{entry.name}</span>
+                </button>
+              </Fragment>
+            )
+          }
           return (
             <Fragment key={entry.path}>
               <div
                 className={css.row}
                 style={pad}
                 data-file
-                title={`${entry.path}\n${primaryLabel(entry)}`}
-                onClick={() => { if (primary !== null) runOpen(entry, primary) }}
+                role="button"
+                tabIndex={0}
+                title={`${entry.path}\n${t('file.openHint', { action: action.label })}`}
+                // `detail === 2` is the double-click: a single click selects
+                // nothing here, so a half-intended click never launches an app.
+                onClick={(e) => { if (e.detail === 2) action.run() }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return
+                  e.preventDefault()
+                  action.run()
+                }}
               >
                 <span className={css.rowSpacer} />
                 <FileGlyph kind={fileKindOf(entry.name)} />
                 <span className={css.rowName}>{entry.name}</span>
-                <button
-                  type="button"
-                  className={css.rowMenu}
-                  aria-label={t('file.menuAria', { name: entry.name })}
-                  title={t('file.menuAria', { name: entry.name })}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setMenuPath(menuPath === entry.path ? null : entry.path)
-                  }}
-                >
-                  <IconEllipsisOutline16 />
-                </button>
+                <Menu
+                  open={menuEntry?.path === entry.path}
+                  portal
+                  align="start"
+                  side="bottom"
+                  autoFocus
+                  items={menuItems(entry)}
+                  onSelect={(id) => { runMenuAction(entry, id) }}
+                  onClose={() => { setMenuEntry(null) }}
+                  anchor={(
+                    <button
+                      type="button"
+                      className={css.rowMenu}
+                      aria-label={t('file.menuAria', { name: entry.name })}
+                      title={t('file.menuAria', { name: entry.name })}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setMenuEntry(prev => (prev?.path === entry.path ? null : entry))
+                      }}
+                    >
+                      <IconEllipsisOutline16 />
+                    </button>
+                  )}
+                />
               </div>
-              {menuPath === entry.path && (
-                <div className={css.openMenu} style={{ paddingLeft: depth * 14 + 34 }}>
-                  <button type="button" className={css.menuItem} onClick={() => { setMenuPath(null); runOpen(entry, openInCode) }}>
-                    {t('file.openCode')}
-                  </button>
-                  <button type="button" className={css.menuItem} onClick={() => { setMenuPath(null); runOpen(entry, openInMarktext) }}>
-                    {t('file.openMarktext')}
-                  </button>
-                  <button type="button" className={css.menuItem} onClick={() => { setMenuPath(null); runOpen(entry, openPath) }}>
-                    {t('file.openDefault')}
-                  </button>
-                </div>
-              )}
             </Fragment>
           )
         })}
@@ -287,16 +418,21 @@ export function FileTree({ root, list, openPath, openInCode, openInMarktext, t }
     )
   }
 
-  const rootName = useMemo(() => {
-    const trimmed = root.endsWith('/') || root.endsWith('\\') ? root.slice(0, -1) : root
-    const sep = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
-    return sep === -1 ? trimmed : trimmed.slice(sep + 1)
-  }, [root])
+  const rootName = useMemo(() => basenameOf(root), [root])
 
   return (
     <div className={css.tree}>
       <div className={css.treeToolbar}>
         <span className={css.treeRoot} title={root}>{rootName || root}</span>
+        <button
+          type="button"
+          className={css.iconButton}
+          aria-label={t('setup.button')}
+          title={t('setup.button')}
+          onClick={() => { onConfigure() }}
+        >
+          <IconSettingsOutline14 />
+        </button>
         <button
           type="button"
           className={css.iconButton}
@@ -318,7 +454,6 @@ export function FileTree({ root, list, openPath, openInCode, openInMarktext, t }
       </div>
       <div className={css.treeBody}>
         {renderLevel(root, 0)}
-        {busyPath !== null && <div className={css.row}>{t('tree.loading')}</div>}
       </div>
       {failure !== null && (
         <div className={css.actionError}>
@@ -327,9 +462,20 @@ export function FileTree({ root, list, openPath, openInCode, openInMarktext, t }
             type="button"
             className={css.inlineButton}
             onClick={() => {
+              const { retry } = failure
+              setFailure(null)
+              retry()
+            }}
+          >
+            {t('action.retry')}
+          </button>
+          <button
+            type="button"
+            className={css.inlineButton}
+            onClick={() => {
               const path = failure.path
               setFailure(null)
-              runOpen({ name: path, path, kind: 'file', hidden: false }, openPath)
+              runOpen({ name: basenameOf(path), path, kind: 'file', hidden: false }, openPath)
             }}
           >
             {t('action.fallback')}
