@@ -1,8 +1,9 @@
 # DeepSeek Harness 个人插件与配置 (DSH)
 
 本仓库备份并分享我在 **DeepSeek Harness** (deepseek-ai/deepseek-harness) 上自研的
-profile 级扩展插件、agent 预设与 Windows 启动脚本。所有插件均为**可选 profile 插件**，
-不在官方 `dsh-base` / `dsh-web-app` bundle 中，harness 本体更新不会影响它们。
+profile 级扩展插件、agent 预设、**桌面外壳(Electron)** 与 Windows 启动脚本。
+所有插件均为**可选 profile 插件**，不在官方 `dsh-base` / `dsh-web-app` bundle 中，
+harness 本体更新不会影响它们。
 
 > **兼容性：本仓库插件适配 DeepSeek Harness 0.1.6**（在 `0.1.6-alpha.1` 上实测运行）。
 > 两个插件都已从 0.1.5 的 `details` 槽位写法迁移到 0.1.6 的**右侧边栏页签**（`sidebarRightTabs`）。
@@ -18,15 +19,21 @@ DSH/
 │   └── dsh-workspace-files/        # 工作区文件浏览器(双击用配置的软件打开 + 首次运行向导)
 ├── build/                          # 独立客户端构建器(不依赖 harness monorepo)
 │   └── client-bundle.mjs           # esbuild + lightningcss，产出宿主端 ESM + 浏览器端 bundle
+├── desktop/                        # 桌面外壳(Electron 独立 npm 项目)
+│   ├── main.js                     # 主进程:窗口/视图、服务启停守护、IPC
+│   ├── shell.html / shell.js       # 自定义标题栏(刷新/重启/最小化/最大化/关闭)
+│   ├── preload.js                  # 标题栏 IPC 桥接(contextBridge)
+│   ├── loading.html                # 启动/重启占位页
+│   └── assets/                     # 应用图标(harness.ico 等)与生成脚本
 ├── config/                         # 运行时配置(需手动放置到 ~/.dsh)
 │   ├── settings.yaml               # 全局设置(默认 agent 预设、默认模型等)
 │   └── agent-presets/              # agent 预设(复制到 ~/.dsh/.agent-presets/)
 │       ├── dsh-anchored-subagent/  # Minimal → 完整工具目录的锚定开局
 │       └── minimal-win/            # Windows 双工具编码 Agent(pwsh + str_replace_editor)
-└── scripts/                        # 本机启动脚本(放在 DSH 仓库根目录使用)
+└── scripts/                        # 本机启动脚本(复制到 DSH 安装目录使用)
     ├── deploy-plugin.ps1           # 构建 + 部署插件到 ~/.dsh/profiles/web
     ├── launch-server.ps1           # 无窗口后台启动 dsh web(开机自启用)
-    └── launch-desktop.ps1          # 桌面快捷方式:拉起服务 + Edge 独立窗口
+    └── launch-desktop.ps1          # 桌面快捷方式:优先 Electron 外壳,回退 Edge 窗口
 ```
 
 ## plugins/ — 自研插件
@@ -79,6 +86,29 @@ powershell -File E:\DSH\scripts\deploy-plugin.ps1 dsh-ssh-files
 `deploy-plugin.ps1` 会调用构建器,再把 `lib/`、`cordis.patch.yml`、`package.json`
 拷进 `~/.dsh/profiles/web/node_modules/@deepseek-ai/<插件名>`;之后重启 dsh web 即可。
 
+## desktop/ — 桌面外壳(Electron)
+
+把 `dsh web` 的 Web 界面包装成独立桌面应用:自定义标题栏(⟳ 重启 / 最小化 / 最大化 / 关闭)、
+**全程无 PowerShell 控制台窗口**、服务启停由外壳内部守护;标题栏配色跟随 Harness 页面主题。
+
+```
+BaseWindow(无边框)
+├── 标题栏视图  shell.html + preload.js   (自定义按钮)
+└── 内容视图    http://127.0.0.1:3080     (Harness 界面)
+```
+
+- 安装(该目录是独立 npm 项目;npm 11 需允许 electron 安装脚本,见其 `package.json` 的 `allowScripts`):
+  ```powershell
+  cd desktop
+  npm install
+  ```
+- 启动:双击 `desktop\node_modules\electron\dist\electron.exe`(可自建快捷方式,图标
+  `desktop\assets\harness.ico`),或在 `desktop` 目录内 `npm start`;也可用 `scripts\launch-desktop.ps1`。
+- `F5` / `Ctrl+R` 刷新界面;`Ctrl+Shift+R`(或标题栏 ⟳)重启 Harness 服务。
+- 重启/刷新会等新 token 落盘后再加载,并在页面不可用时自动重试,不会停在白屏。
+- 图标可用 `npm run icon` 从 `assets/icon-source.svg` 重新生成。
+- 更多细节见 [desktop/README.md](desktop/README.md)。
+
 ## config/ — 运行时配置
 
 放在 `~/.dsh/` 下(Windows 为 `C:\Users\<你>\.dsh`):
@@ -95,12 +125,14 @@ powershell -File E:\DSH\scripts\deploy-plugin.ps1 dsh-ssh-files
 
 ## scripts/ — 启动脚本(Windows)
 
-放在 DSH 主仓库根目录使用。脚本内写死本机代理 `127.0.0.1:7890`(Clash),
+**复制到你的 DSH 安装目录**(与 `desktop/`、`node_modules/` 同级)后使用;脚本按
+`$PSScriptRoot` 定位安装目录。脚本内写死本机代理 `127.0.0.1:7897`(Clash),
 按需修改。文件需保持 **UTF-8 with BOM**(PowerShell 5.1 无 BOM 会按 GBK 解析导致乱码)。
 
-- `launch-server.ps1` — 无窗口后台启动 `dsh web`(端口 3080),日志写 `server.log`。
-- `launch-desktop.ps1` — 若服务未运行先拉起,再以 Edge `--app` 独立窗口打开界面;
-  可创建桌面快捷方式指向它。
+- `launch-server.ps1` — 无窗口后台启动 `dsh web`(端口 3080),日志写 `server.log`;
+  带 60 秒就绪等待与失败日志(适合开机自启)。
+- `launch-desktop.ps1` — **优先启动 Electron 桌面外壳**(`desktop/` 内已安装依赖时),
+  未安装时回退为 Edge/Chrome `--app` 独立窗口;可创建桌面快捷方式指向它。
 
 ## 说明
 

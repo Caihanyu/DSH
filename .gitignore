@@ -23,3 +23,5 @@ plugins/*/package-lock.json
 plugins/*/.typecheck-head/
 build/.npmrc
 build/package-lock.json
+desktop/.npmrc
+desktop/package-lock.json

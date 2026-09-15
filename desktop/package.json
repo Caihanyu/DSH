@@ -1,0 +1,17 @@
+{
+  "name": "deepseek-harness-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DeepSeek Harness 桌面外壳(Electron):自定义标题栏 + 服务生命周期管理",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "electron assets/build-icon.js"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0"
+  },
+  "allowScripts": {
+    "electron@32.3.3": true
+  }
+}
