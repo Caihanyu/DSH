@@ -82,6 +82,18 @@ export const zh = {
   'editor.unsaved': '有未保存的修改，关闭将丢失。确定关闭？',
   'editor.dirty': '未保存',
   'editor.bytes': '{size} 字节',
+  'view.switch': '面板视图',
+  'view.files': '文件',
+  'view.terminal': '终端',
+  'term.connecting': '正在打开终端…',
+  'term.open': '已连接',
+  'term.closed': '终端已结束',
+  'term.ended': '远程 shell 已结束',
+  'term.reconnect': '重新打开',
+  'term.clear': '清屏',
+  'term.close': '关闭终端',
+  'term.needConnection': '请先连接服务器，再打开终端。',
+  'term.failed': '终端出错：{message}',
 } satisfies Record<string, string>
 
 /** English dictionary (key-complete mirror of zh). */
@@ -162,6 +174,18 @@ export const en = {
   'editor.unsaved': 'You have unsaved changes; closing will discard them. Close anyway?',
   'editor.dirty': 'Unsaved',
   'editor.bytes': '{size} bytes',
+  'view.switch': 'Panel view',
+  'view.files': 'Files',
+  'view.terminal': 'Terminal',
+  'term.connecting': 'Opening terminal…',
+  'term.open': 'Connected',
+  'term.closed': 'Terminal ended',
+  'term.ended': 'Remote shell ended',
+  'term.reconnect': 'Reopen',
+  'term.clear': 'Clear',
+  'term.close': 'Close terminal',
+  'term.needConnection': 'Connect to a server first, then open the terminal.',
+  'term.failed': 'Terminal failed: {message}',
 } satisfies Record<string, string>
 
 /** Dictionary key union for the `ssh-files` namespace. */

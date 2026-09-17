@@ -16,6 +16,7 @@ import type { SshFileEntry, SshFilesPanelProps, SshStateResponse } from './contr
 import { FileEditor } from './file-editor.tsx'
 import { FileTree } from './file-tree.tsx'
 import { ServerManager } from './server-manager.tsx'
+import { SshTerminalView } from './terminal.tsx'
 import css from './SshFilesPanel.module.css'
 
 /** Join a directory and a name with `/` (Node fs and SFTP both accept `/` on every platform). */
@@ -29,7 +30,11 @@ export function SshFilesPanel(props: SshFilesPanelProps) {
     sessionId: sid, t,
     getState, setMode, addServer, updateServer, removeServer, connect, disconnect,
     list, read, write, mkdir, unlink, openNewSessionOn,
+    terminalStreamUrl, writeTerminal, resizeTerminal, closeTerminal,
   } = props
+
+  /** Which side of the panel is showing: the remote file tree or the terminal. */
+  const [view, setView] = useState<'files' | 'terminal'>('files')
 
   const [response, setResponse] = useState<SshStateResponse | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -246,7 +251,41 @@ export function SshFilesPanel(props: SshFilesPanelProps) {
             </button>
           </div>
       </header>
+      <div className={css.viewBar}>
+        <div className={css.modeBar} role="tablist" aria-label={t('view.switch')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'files'}
+            className={view === 'files' ? `${css.modeTab} ${css.modeTabActive}` : css.modeTab}
+            onClick={() => { setView('files') }}
+          >
+            {t('view.files')}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'terminal'}
+            className={view === 'terminal' ? `${css.modeTab} ${css.modeTabActive}` : css.modeTab}
+            onClick={() => { setView('terminal') }}
+          >
+            {t('view.terminal')}
+          </button>
+        </div>
+      </div>
       <div className={css.body}>
+        {view === 'terminal' && (
+          <SshTerminalView
+            sessionId={sid}
+            connected={connected}
+            t={t}
+            terminalStreamUrl={terminalStreamUrl}
+            writeTerminal={writeTerminal}
+            resizeTerminal={resizeTerminal}
+            closeTerminal={closeTerminal}
+          />
+        )}
+        {view === 'files' && (<>
         {loadError !== null && (
           <div className={css.empty}>
             <IconWarningOutline16 />
@@ -287,6 +326,7 @@ export function SshFilesPanel(props: SshFilesPanelProps) {
             t={t}
           />
         )}
+        </>)}
       </div>
       <ServerManager
         open={manageOpen}

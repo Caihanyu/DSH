@@ -16,10 +16,35 @@
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { createRequire } from 'node:module'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { build } from 'esbuild'
-import { transform } from 'lightningcss'
+
+/**
+ * Load the build toolchain from the plugin's own install (the README's
+ * `npm install` inside the plugin directory), falling back to the repository's
+ * resolution so an install at either level works.
+ * @param pluginDir - the plugin package directory.
+ * @returns the loaded esbuild and lightningcss modules.
+ */
+function loadToolchain(pluginDir) {
+  const fromPlugin = createRequire(join(pluginDir, 'package.json'))
+  const fromBuilder = createRequire(import.meta.url)
+  const load = (specifier) => {
+    for (const require of [fromPlugin, fromBuilder]) {
+      try {
+        return require(specifier)
+      } catch { /* try the next resolution root */ }
+    }
+    throw new Error(`client-bundle: cannot resolve ${specifier}; run npm install in the plugin directory`)
+  }
+  const esbuild = load('esbuild')
+  const lightningcss = load('lightningcss')
+  return {
+    build: esbuild.build ?? esbuild.default?.build,
+    transform: lightningcss.transform ?? lightningcss.default?.transform,
+  }
+}
 
 /** The module specifiers the web shell shares into its frozen module table. */
 const PLATFORM_MODULES = [
@@ -52,8 +77,8 @@ function styleInjectionModule(id, fileId, css, classMap) {
 }
 
 /** Compile one stylesheet, returning its CSS text and (for modules) its class map. */
-function compileStylesheet(fileId, source, modules) {
-  const { code, exports } = transform({
+function compileStylesheet(toolchain, fileId, source, modules) {
+  const { code, exports } = toolchain.transform({
     filename: fileId,
     code: source,
     ...(modules ? { cssModules: { pattern: '[hash]_[local]' } } : {}),
@@ -72,19 +97,34 @@ function resolveSheet(source, importer) {
   return importer === undefined ? source : resolve(dirname(importer), source)
 }
 
+/**
+ * Resolve one stylesheet specifier to an absolute file: a relative path against
+ * its importer, a bare specifier through the importer's own package resolution
+ * (the shape `@scope/package/styles.css` imports need).
+ * @param specifier - the import specifier as written.
+ * @param importer - absolute path of the importing file, when esbuild reports one.
+ * @param pluginDir - the plugin package directory (resolution root of last resort).
+ * @returns the absolute path esbuild should load.
+ */
+function resolveStylesheet(specifier, importer, pluginDir) {
+  if (specifier.startsWith('.') || isAbsolute(specifier)) return resolveSheet(specifier, importer)
+  const require = createRequire(importer ?? join(pluginDir, 'package.json'))
+  return require.resolve(specifier)
+}
+
 /** esbuild plugin: inline every stylesheet the bundle imports. */
-function stylesheetPlugin(id) {
+function stylesheetPlugin(id, toolchain, pluginDir) {
   return {
     name: 'dsh-css-inline',
     setup(pluginBuild) {
       pluginBuild.onResolve({ filter: /\.css$/ }, args => ({
-        path: resolveSheet(args.path, args.importer),
+        path: resolveStylesheet(args.path, args.importer, pluginDir),
         namespace: 'dsh-css',
       }))
       pluginBuild.onLoad({ filter: /.*/, namespace: 'dsh-css' }, async (args) => {
         const source = await readFile(args.path)
         const modules = args.path.endsWith('.module.css')
-        const { css, classMap } = compileStylesheet(args.path, source, modules)
+        const { css, classMap } = compileStylesheet(toolchain, args.path, source, modules)
         return { contents: styleInjectionModule(id, args.path, css, classMap), loader: 'js', resolveDir: dirname(args.path) }
       })
     },
@@ -96,12 +136,13 @@ function stylesheetPlugin(id) {
  * one artifact (their `.ts` specifiers are erased here, not at runtime), while
  * every npm dependency stays an import — the Node half runs from a real
  * install, so its dependencies resolve at runtime.
+ * @param toolchain - the loaded esbuild/lightningcss modules.
  * @param source - absolute source file.
  * @param outfile - absolute emitted file.
  */
-async function buildHostEntry(source, outfile) {
+async function buildHostEntry(toolchain, source, outfile) {
   if (!existsSync(source)) return
-  await build({
+  await toolchain.build({
     entryPoints: [source],
     outfile,
     bundle: true,
@@ -126,9 +167,10 @@ async function main(pluginDir) {
   if (!existsSync(manifestPath)) throw new Error(`client-bundle: no package.json in ${dir}`)
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   const id = manifest.name
+  const toolchain = loadToolchain(dir)
 
-  await buildHostEntry(join(dir, 'src', 'index.ts'), join(dir, 'lib', 'index.js'))
-  await buildHostEntry(join(dir, 'src', 'invariant.ts'), join(dir, 'lib', 'invariant.js'))
+  await buildHostEntry(toolchain, join(dir, 'src', 'index.ts'), join(dir, 'lib', 'index.js'))
+  await buildHostEntry(toolchain, join(dir, 'src', 'invariant.ts'), join(dir, 'lib', 'invariant.js'))
 
   const entry = join(dir, 'src', 'client', 'index.ts')
   if (!existsSync(entry)) throw new Error(`client-bundle: no client entry at ${entry}`)
@@ -138,7 +180,7 @@ async function main(pluginDir) {
   const requested = new Set([...(manifest.dsh?.client?.external ?? [])])
   const external = [...PLATFORM_MODULES, ...requested]
 
-  const result = await build({
+  const result = await toolchain.build({
     entryPoints: [entry],
     outfile,
     bundle: true,
@@ -163,7 +205,7 @@ async function main(pluginDir) {
         strict: true,
       },
     },
-    plugins: [stylesheetPlugin(id)],
+    plugins: [stylesheetPlugin(id, toolchain, dir)],
     banner: {
       js: `window.__ModuleLoader__.load({\n  id: ${JSON.stringify(id)},\n  factory: (require) => {\nvar module = { exports: {} }; var exports = module.exports;`,
     },

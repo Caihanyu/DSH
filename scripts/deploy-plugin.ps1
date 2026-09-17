@@ -8,6 +8,10 @@ rebuilt plugin must be redeployed before the next boot. This script is the
 repo's one-step deploy: build (unless -SkipBuild), then copy lib/, the bundle
 patch, and the manifest into the profile.
 
+Paths are derived from this script's own location, so the repository works
+wherever it is cloned. The first build needs each plugin's dependencies
+(`npm install --legacy-peer-deps` inside the plugin directory).
+
 .PARAMETER Plugin
 Plugin directory name under plugins/ (e.g. dsh-workspace-files).
 
@@ -24,11 +28,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$src = Join-Path 'E:\DSH\plugins' $Plugin
+$repo = Split-Path $PSScriptRoot -Parent
+$src = Join-Path (Join-Path $repo 'plugins') $Plugin
 if (-not (Test-Path $src)) { throw "no plugin at $src" }
 
 if (-not $SkipBuild) {
-  node 'E:\DSH\build\client-bundle.mjs' $src
+  $builder = Join-Path (Join-Path $repo 'build') 'client-bundle.mjs'
+  node $builder $src
   if ($LASTEXITCODE -ne 0) { throw 'client-bundle failed' }
 }
 

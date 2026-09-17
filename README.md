@@ -42,7 +42,8 @@ DSH/
 不含 `node_modules`(运行时依赖由 web profile 安装)。详细功能见各插件 README:
 
 - [dsh-ssh-files](plugins/dsh-ssh-files/README.md) — SSH 远程文件访问:
-  右侧边栏「SSH 文件」Tab、多服务器管理、SFTP 读写(本地浏览交给内置工作区树,面板已不收本地模式),
+  右侧边栏「SSH 文件」Tab、多服务器管理、SFTP 读写(本地浏览交给内置工作区树,面板已不收本地模式)、
+  **面板内远程终端**(xterm PTY,shell 跨视图/刷新保持),
   以及模型可用的 `ssh_status/ssh_connect/ssh_list/ssh_read/ssh_write/ssh_mkdir/
   ssh_rm/ssh_exec` 工具。会话隔离、自动回连。
 - [dsh-workspace-files](plugins/dsh-workspace-files/README.md) — 工作区文件浏览器（**适配 harness 0.1.6**）：
@@ -58,18 +59,24 @@ harness 0.1.5 起客户端插件必须是预编译产物(宿主端 `lib/index.js
 等价的独立构建器 `build/client-bundle.mjs`(esbuild + lightningcss):
 
 ```powershell
-# 插件目录内先装一次依赖(类型包 + esbuild/lightningcss)
+# 插件目录内先装一次依赖(类型包 + esbuild/lightningcss + 前端 bundle 用的包,如 xterm)
 cd plugins\dsh-ssh-files
 npm install --legacy-peer-deps
 npm approve-scripts esbuild@0.28.2   # npm 11 默认拦截安装脚本
 npm rebuild esbuild
 
-# 构建(宿主端打包本地模块;客户端产出 __ModuleLoader__ 工厂)
-node E:\DSH\build\client-bundle.mjs E:\DSH\plugins\dsh-ssh-files
+# 构建(宿主端打包本地模块;客户端产出 __ModuleLoader__ 工厂)。
+# 路径按仓库位置推导,任何 clone 位置都能跑。
+node build\client-bundle.mjs plugins\dsh-ssh-files
+
+# 构建 + 部署到 profile 一步到位
+powershell -File scripts\deploy-plugin.ps1 dsh-ssh-files
 ```
 
 宿主端必须 `bundle: true` + `packages: 'external'`,否则 `lib/index.js` 里会残留
-`./store.ts` 之类的导入,装进 profile 后直接 `ERR_MODULE_NOT_FOUND`。
+`./store.ts` 之类的导入,装进 profile 后直接 `ERR_MODULE_NOT_FOUND`。构建器把
+插件目录当作工具链与依赖解析根(`npm install` 装在哪就在哪解析),npm 包内的
+样式(css)导入也通过导入方自己的解析规则处理。
 
 ### 安装到 web profile 并部署改动
 

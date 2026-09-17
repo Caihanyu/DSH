@@ -38,6 +38,40 @@ export interface SshConnectResult {
   root: string
 }
 
+/** The character-cell size a PTY starts with and is resized to. */
+export interface SshTerminalSize {
+  /** Terminal width in character cells. */
+  cols: number
+  /** Terminal height in character cells. */
+  rows: number
+}
+
+/** Callbacks one live shell reports through for its whole lifetime. */
+export interface SshShellHandlers {
+  /** Decoded terminal output, exactly as the remote PTY produced it. */
+  onData: (text: string) => void
+  /** The shell ended; `code`/`signal` come from the channel's close event. */
+  onClose: (outcome: { code: number | null; signal: string | null }) => void
+  /** The channel failed outside a normal close (the close callback still fires). */
+  onError: (error: Error) => void
+}
+
+/** One live remote PTY shell. */
+export interface SshShell {
+  /** Send input (keystrokes) to the remote shell. */
+  write(data: string): void
+  /** Tell the remote PTY the client's new window size. */
+  resize(size: SshTerminalSize): void
+  /** Stop the remote channel from delivering data (stream backpressure). */
+  pause(): void
+  /** Resume a paused remote channel. */
+  resume(): void
+  /** End the remote shell. */
+  close(): void
+  /** Whether the channel is still usable. */
+  readonly alive: boolean
+}
+
 /** One ssh2 SFTP method invoked with its trailing callback, as a promise.
  *  The `any[]` parameter and spread are required because ssh2's callback
  *  overloads are not assignable to a precise generic signature; the runtime
@@ -461,6 +495,106 @@ export class SshConnection {
     } else {
       await this.boundedSftp('删除', signal, () => sftpCall<void>(sftp.unlink.bind(sftp), path))
     }
+  }
+
+  /**
+   * The connection's ssh2 client, throwing a clear error when not connected.
+   * The shell only needs the transport, not the SFTP channel.
+   */
+  private requireClient(): Client {
+    if (this.client === null) throw new Error('尚未连接服务器，请先连接（ssh_connect 或右侧面板）')
+    return this.client
+  }
+
+  /**
+   * Open one interactive shell (PTY) on the connection for the panel's
+   * terminal. Output arrives decoded through {@link SshShellHandlers.onData}
+   * and includes the prompt and echo the remote terminal produces; the caller
+   * owns display state, this object owns only the channel.
+   * @param size - initial terminal size (character cells).
+   * @param handlers - output, close, and failure callbacks.
+   * @param signal - aborts the attempt before the channel opens.
+   * @returns the live shell handle.
+   */
+  async openShell(
+    size: SshTerminalSize,
+    handlers: SshShellHandlers,
+    signal?: AbortSignal,
+  ): Promise<SshShell> {
+    const client = this.requireClient()
+    return new Promise<SshShell>((resolve, reject) => {
+      let settled = false
+      const onAbort = (): void => {
+        if (settled) return
+        settled = true
+        reject(new Error('打开终端已取消'))
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      if (signal?.aborted === true) {
+        onAbort()
+        return
+      }
+      client.shell({ term: 'xterm-256color', cols: size.cols, rows: size.rows }, (error, channel) => {
+        signal?.removeEventListener('abort', onAbort)
+        if (error) {
+          settled = true
+          reject(error instanceof Error ? error : new Error(String(error)))
+          return
+        }
+        // A multi-byte character may straddle two chunks; the streaming decoder
+        // keeps the partial sequence until the rest arrives.
+        const decoder = new TextDecoder('utf-8')
+        let alive = true
+        let handed = false
+        const shell: SshShell = {
+          get alive(): boolean { return alive },
+          write: (data: string): void => {
+            if (!alive || data.length === 0) return
+            try { channel.write(data) } catch { /* the channel closed mid-write */ }
+          },
+          resize: ({ cols, rows }: SshTerminalSize): void => {
+            if (!alive) return
+            // Older servers may refuse a window change; the shell stays usable.
+            try { channel.setWindow(rows, cols, 0, 0) } catch { /* ignored */ }
+          },
+          pause: (): void => {
+            try { channel.pause() } catch { /* already closed */ }
+          },
+          resume: (): void => {
+            try { channel.resume() } catch { /* already closed */ }
+          },
+          close: (): void => {
+            try { channel.close() } catch { /* already closed */ }
+          },
+        }
+        channel.on('data', (chunk: Buffer) => {
+          handlers.onData(decoder.decode(chunk, { stream: true }))
+        })
+        // A PTY normally folds stderr into the same stream; when the server
+        // keeps it separate, it is output all the same.
+        channel.stderr?.on('data', (chunk: Buffer) => {
+          handlers.onData(decoder.decode(chunk, { stream: true }))
+        })
+        channel.on('close', (code: number | null, signalName?: string) => {
+          alive = false
+          if (handed) handlers.onClose({ code: code ?? null, signal: signalName ?? null })
+          else {
+            handed = true
+            reject(new Error('远程终端在打开时即结束'))
+          }
+        })
+        channel.on('error', (channelError: Error) => {
+          alive = false
+          if (handed) handlers.onError(channelError)
+          else {
+            handed = true
+            reject(channelError)
+          }
+        })
+        handed = true
+        resolve(shell)
+      })
+    })
   }
 
   /**

@@ -149,7 +149,8 @@ async function callRoute(
  * Required services (cordis fiber inject): the slot registry, the locale
  * service, the right-Sidebar tab-type registry, and the workspace navigation
  * face (opening a new conversation on a server). Route calls ride the page's
- * own `fetch`, so the connection transport needs no injection here.
+ * own `fetch` — including the terminal stream — so the connection transport
+ * needs no injection here.
  */
 export const inject = ['slots', 'locale', 'sidebarRightTabs', 'uiWorkspace']
 
@@ -208,6 +209,13 @@ export function apply(ctx: ClientContext): void {
       openLocalDefault: path => callRoute('', 'open-local', { path, command: 'default' }).then(() => undefined),
       openLocalCode: path => callRoute('', 'open-local', { path, command: 'code' }).then(() => undefined),
       openLocalMarktext: path => callRoute('', 'open-local', { path, command: 'marktext' }).then(() => undefined),
+      terminalStreamUrl: (sessionId, size) => `${ROUTE_PATH}/terminal-stream`
+        + `?sessionId=${encodeURIComponent(sessionId)}&cols=${String(size.cols)}&rows=${String(size.rows)}`,
+      writeTerminal: (sessionId, data) => callRoute(sessionId, 'terminal-write', { data }).then(() => undefined),
+      resizeTerminal: (sessionId, size) => callRoute(sessionId, 'terminal-resize', {
+        cols: size.cols, rows: size.rows,
+      }).then(() => undefined),
+      closeTerminal: sessionId => callRoute(sessionId, 'terminal-close', {}).then(() => undefined),
     }),
   }, SshFilesPanel)), 'ssh-files: tab body')
 }

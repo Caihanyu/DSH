@@ -17,12 +17,15 @@ import { runNativeCommand } from '@deepseek-ai/dsh-native-command'
 import z from '@deepseek-ai/schemastery'
 import { SshSessionStore, type SessionKey } from './store.ts'
 import type { SshMode } from './state.ts'
+import type { SshTerminalSize } from './ssh.ts'
+import { SshTerminalHub, type TerminalFrame } from './terminal.ts'
 import { registerSshTools } from './tools.ts'
 
 export type { SshMode, SshServer, SshAuth, SessionPref, SshState } from './state.ts'
-export type { SshFileEntry, SshListing } from './ssh.ts'
+export type { SshFileEntry, SshListing, SshShell, SshTerminalSize } from './ssh.ts'
 export type { SshPanelState, SshStateResponse, SshServerInput } from './store.ts'
 export { SshSessionStore } from './store.ts'
+export { SshTerminalHub, type TerminalFrame } from './terminal.ts'
 
 /** Validated plugin configuration. */
 export interface Config {
@@ -38,6 +41,8 @@ export interface Config {
   readMaxLines: number
   /** Cap on one `ssh_exec` captured stream (characters). */
   execMaxChars: number
+  /** Replay budget for one session's terminal (characters; the tail is kept). */
+  termBufferChars: number
   /** Executable that opens a code file: a PATH name or an absolute path. */
   code: string
   /** Executable that opens a Markdown file: a PATH name or an absolute path. */
@@ -51,6 +56,7 @@ export const Config: z<Config> = z.object({
   writeMaxChars: z.number().default(200000),
   readMaxLines: z.number().default(2000),
   execMaxChars: z.number().default(20000),
+  termBufferChars: z.number().default(200000),
   code: z.string().default('code'),
   marktext: z.string().default('marktext'),
 })
@@ -77,6 +83,21 @@ function parseMode(payload: unknown): SshMode | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined
   const mode = (payload as Record<string, unknown>).mode
   return mode === 'local' || mode === 'ssh' ? mode : undefined
+}
+
+/** Recover a validated terminal size from a payload or query; undefined = malformed. */
+function parseTerminalSize(source: Record<string, unknown>): SshTerminalSize | undefined {
+  const cols = toDimension(source.cols, 20, 500)
+  const rows = toDimension(source.rows, 4, 300)
+  if (cols === undefined || rows === undefined) return undefined
+  return { cols, rows }
+}
+
+/** Clamp one terminal dimension to a usable range; undefined when not a number. */
+function toDimension(value: unknown, min: number, max: number): number | undefined {
+  const numeric = typeof value === 'string' && value.trim() !== '' ? Number(value) : value
+  if (typeof numeric !== 'number' || !Number.isFinite(numeric)) return undefined
+  return Math.min(max, Math.max(min, Math.round(numeric)))
 }
 
 /** Recovers a valid non-empty string field from a request payload. */
@@ -222,6 +243,12 @@ function writeJson(response: ServerResponse, status: number, body: unknown): voi
  *   / `connect` / `disconnect` — per-session state and the shared server pool.
  * - `list` / `read` / `write` / `mkdir` / `unlink` — mode-aware file operations
  *   for the calling session.
+ * - `terminal-write` / `terminal-resize` / `terminal-close` — drive the
+ *   session's remote PTY shell (the shell itself is opened by attaching to the
+ *   stream below, so it survives the panel switching views).
+ * - `terminal-stream` — the route's only GET: a long-lived NDJSON stream of
+ *   `snapshot` / `data` / `exit` / `error` / `ping` frames from the session's
+ *   shell, the panel's terminal window onto it.
  * - `open-local` — open a local path in a desktop app (local mode only).
  *
  * The route sits behind the connection service's Host/Origin fence and
@@ -234,6 +261,14 @@ export function apply(ctx: Context, config: Config): void {
   const resolved = config as ResolvedConfig
   const store = new SshSessionStore(resolved.opTimeoutMs)
   ctx.effect(() => () => { void store.dispose() }, 'ssh-files: session teardown')
+
+  // Interactive terminals reuse the session's live SSH connection; a session
+  // that is not connected reports that through the stream's failure frame.
+  const terminals = new SshTerminalHub(
+    sessionId => store.requireConnectedFor(sessionId),
+    resolved.termBufferChars,
+  )
+  ctx.effect(() => () => { terminals.dispose() }, 'ssh-files: terminal teardown')
 
   // Model-facing tools share the same per-session store as the panel.
   registerSshTools(ctx, store, {
@@ -309,6 +344,21 @@ export function apply(ctx: Context, config: Config): void {
           await store.unlink(session, path, signal)
           return { ok: true, value: { removed: true as const } }
         }
+        case 'terminal-write': {
+          const data = parseOptionalString(payload, 'data')
+          if (data === undefined) throw new Error('缺少终端输入')
+          terminals.write(session, data)
+          return { ok: true, value: { written: true as const } }
+        }
+        case 'terminal-resize': {
+          const size = parseTerminalSize((payload ?? {}) as Record<string, unknown>)
+          if (size === undefined) throw new Error('终端尺寸无效（需要 cols 与 rows）')
+          terminals.resize(session, size)
+          return { ok: true, value: { resized: true as const } }
+        }
+        case 'terminal-close':
+          terminals.close(session)
+          return { ok: true, value: { closed: true as const } }
         case 'open-local': {
           const record = (payload ?? {}) as Record<string, unknown>
           const path = parseStringField(record, 'path')
@@ -348,6 +398,84 @@ export function apply(ctx: Context, config: Config): void {
         : { ok: false, error: { message: result.message } })
     }
 
+    /**
+     * Serve one session's terminal output as NDJSON frames: the replay buffer
+     * as the first `snapshot` frame, then live output until the client or the
+     * shell ends. Attaching is what opens the shell; a session with no live
+     * connection answers 409 with the connect hint instead of streaming.
+     */
+    const streamTerminal = async (
+      request: IncomingMessage,
+      response: ServerResponse,
+      params: URLSearchParams,
+    ): Promise<void> => {
+      const sessionId = params.get('sessionId') ?? ''
+      const size = parseTerminalSize({
+        cols: params.get('cols') ?? undefined,
+        rows: params.get('rows') ?? undefined,
+      })
+      if (size === undefined) {
+        settle(response, 400, { ok: false, message: 'ssh-files: invalid terminal size (cols, rows)' })
+        return
+      }
+      // Frames emitted while the snapshot is still being assembled queue here
+      // and flush after it, so the client's screen always starts from the
+      // replay buffer rather than from a mid-stream chunk.
+      const pending: TerminalFrame[] = []
+      let ready = false
+      let closed = false
+      let congested = false
+      const writeFrame = (frame: TerminalFrame): void => {
+        if (closed || response.writableEnded || response.destroyed) return
+        if (response.write(`${JSON.stringify(frame)}\n`)) return
+        // The socket is backed up: stop the remote channel delivering until the
+        // response drains, instead of buffering the flood in this process.
+        if (congested) return
+        congested = true
+        terminals.pause(sessionId)
+        response.once('drain', () => {
+          congested = false
+          terminals.resume(sessionId)
+        })
+      }
+      const detach = terminals.subscribe(sessionId, (frame) => {
+        if (ready) writeFrame(frame)
+        else pending.push(frame)
+      })
+      let snapshot: { snapshot: string; trimmed: boolean }
+      try {
+        snapshot = await terminals.attach(sessionId, size)
+      } catch (error) {
+        detach()
+        settle(response, 409, {
+          ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        })
+        return
+      }
+      response.writeHead(200, {
+        'content-type': 'application/x-ndjson; charset=utf-8',
+        'cache-control': 'no-store, no-transform',
+        'x-accel-buffering': 'no',
+      })
+      response.flushHeaders()
+      const ping = setInterval(() => { writeFrame({ kind: 'ping' }) }, 15000)
+      const cleanup = (): void => {
+        if (closed) return
+        closed = true
+        clearInterval(ping)
+        detach()
+        terminals.resume(sessionId)
+      }
+      request.on('close', cleanup)
+      response.on('close', cleanup)
+      response.on('error', cleanup)
+      writeFrame({ kind: 'snapshot', data: snapshot.snapshot, trimmed: snapshot.trimmed })
+      ready = true
+      for (const frame of pending) writeFrame(frame)
+      pending.length = 0
+    }
+
     const route: WebRoute = {
       kind: 'prefix',
       path: ROUTE_PATH,
@@ -358,12 +486,23 @@ export function apply(ctx: Context, config: Config): void {
           response.end(rejection === 401 ? 'unauthorized' : 'forbidden')
           return
         }
+        const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+        const endpoint = url.pathname.slice(ROUTE_PATH.length + 1)
+        if (request.method === 'GET') {
+          if (endpoint !== 'terminal-stream') {
+            settle(response, 405, {
+              ok: false,
+              message: 'ssh-files: GET serves terminal-stream only; every other endpoint is a JSON POST',
+            })
+            return
+          }
+          await streamTerminal(request, response, url.searchParams)
+          return
+        }
         if (request.method !== 'POST') {
           settle(response, 405, { ok: false, message: 'ssh-files: this route accepts POST only' })
           return
         }
-        const endpoint = new URL(request.url ?? '/', 'http://127.0.0.1')
-          .pathname.slice(ROUTE_PATH.length + 1)
         let payload: unknown
         try {
           payload = await readJsonBody(request)

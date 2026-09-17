@@ -7,16 +7,21 @@ SSH 远程文件访问 —— 一个**可选的 profile 插件**（**适配 harn
 - **纯 SSH 形态**：面板只管理远程连接，本地文件浏览交给内置工作区树 / `dsh-workspace-files`；旧会话里记住的 local 模式会在面板挂载时自动切换成 ssh
 - **多服务器管理**：记录多台服务器，选择并连接某一台（支持密码 / 私钥文件 / SSH Agent 认证），浏览远程目录树，**面板内直接读写远程文本文件**（新建 / 编辑 / 保存 / 删除 / 建目录）
 - **模型可用的 `ssh_*` 工具**：连接后，对话中的模型可以直接调用 `ssh_status` / `ssh_connect` / `ssh_list` / `ssh_read` / `ssh_write` / `ssh_mkdir` / `ssh_rm` / `ssh_exec` 在服务器上干活（读改写文件、跑远程命令）——会话的工具提示会说明这套工具，SSH 会话与其它会话的模型能力互不影响
+- **远程终端（xterm）**：面板内的「文件 / 终端」切换条切到终端，直接在服务器上开一个 PTY shell（`xterm-256color`），提示符、颜色、全屏程序（vi/htop）都能用；shell 活在宿主侧，切回文件视图、刷新页面、重新打开标签都会回到同一个远程会话（重放最近输出）
 - **会话隔离**：每个对话**各自记住**服务器，并拥有**各自独立的 SSH 连接**。会话 A 连服务器 X、会话 B 连服务器 Y，两者互不串扰；A 断开不影响 B。全新对话默认继承"最近一次使用"的服务器
 - **连接记忆**：记住最近连接的服务器，下次打开自动回连
 
 ```
 ┌───────────────────────────────────────────────┐
 │ [服务器▾]                     [连接] [⚙]       │
+│ [文件] [终端]                                  │
 ├───────────────────────────────────────────────┤
-│ 目录树（服务器目录，逐层懒加载）                  │
+│ 文件：目录树（服务器目录，逐层懒加载）            │
 │   · 行内 ⋯ 菜单：新建文件/目录、删除             │
 │   · 点击文件 → 内置编辑器：查看、修改、保存       │
+│ 终端：远程 PTY（xterm）                        │
+│   · [重新打开] [清屏] [关闭终端]                │
+│   · 输入命令直接执行，shell 跨视图/刷新保持       │
 └───────────────────────────────────────────────┘
 ```
 
@@ -37,20 +42,21 @@ SSH 远程文件访问 —— 一个**可选的 profile 插件**（**适配 harn
 harness 0.1.5 起客户端插件必须是预编译产物（宿主端 `lib/index.js` + 浏览器端 `lib/client.js`），本仓库自带独立构建器 `build/client-bundle.mjs`（esbuild + lightningcss）：
 
 ```powershell
-# 1) 插件目录内安装依赖（类型包 + esbuild/lightningcss + ssh2）
+# 1) 插件目录内安装依赖（类型包 + esbuild/lightningcss + ssh2 + xterm）
 cd plugins\dsh-ssh-files
 npm install --legacy-peer-deps
 npm approve-scripts esbuild@0.28.2   # npm 11 默认拦截安装脚本
 npm rebuild esbuild
 
-# 2) 构建（宿主端打包本地模块；客户端产出 __ModuleLoader__ 工厂）
-node E:\DSH\build\client-bundle.mjs E:\DSH\plugins\dsh-ssh-files
+# 2) 构建（宿主端打包本地模块；客户端产出 __ModuleLoader__ 工厂，xterm 内联）
+#    路径按仓库位置自动推导，下同
+node build\client-bundle.mjs plugins\dsh-ssh-files
 
 # 3) 首次安装到 web profile（需要 pnpm，可 corepack enable 获取）
-dsh plugin --profile web add "file:E:/DSH/plugins/dsh-ssh-files"
+dsh plugin --profile web add "file:<仓库绝对路径>/plugins/dsh-ssh-files"
 
 # 4) 之后每次改动：构建 + 部署一步到位（profile 里是拷贝而非软链）
-powershell -File E:\DSH\scripts\deploy-plugin.ps1 dsh-ssh-files
+powershell -File scripts\deploy-plugin.ps1 dsh-ssh-files
 
 # 5) 重启 dsh web 服务
 ```
@@ -80,8 +86,22 @@ Invoke-WebRequest 'http://127.0.0.1:3080/plugins/@deepseek-ai%2Fdsh-ssh-files/cl
 | `writeMaxChars` | `200000` | 模型 `ssh_write` 单次内容上限（字符） |
 | `readMaxLines` | `2000` | 模型 `ssh_read` 单次返回行数上限 |
 | `execMaxChars` | `20000` | 模型 `ssh_exec` 单条命令捕获输出上限（字符） |
+| `termBufferChars` | `200000` | 单个会话的终端重放缓冲（字符）：新窗口/刷新后从这段尾巴重建屏幕，超出则丢弃最早输出 |
 | `code` | `code` | 旧「本地模式」打开代码文件的程序（PATH 名或绝对路径；面板改为纯 SSH 后端点保留备用） |
 | `marktext` | `marktext` | 同上，打开 Markdown 的程序 |
+
+## 终端（远程 PTY）
+
+面板的「终端」页签把 xterm.js 绑到会话的远程 shell 上。shell 由**宿主侧**持有（与面板组件生命周期无关），因此切回文件视图、刷新页面、关掉标签再打开，都会**回到同一个远程会话**并从重放缓冲重建屏幕。
+
+| 接口 | 方法 | 说明 |
+|---|---|---|
+| `/ssh-files/terminal-stream?sessionId=&cols=&rows=` | GET | 唯一的长连接响应：NDJSON 帧流（`snapshot` / `data` / `exit` / `error` / `ping`）。**附加即开 shell**；未连接服务器则直接 409 返回连接提示 |
+| `/ssh-files/terminal-write` | POST | `{ sessionId, data }` 发送按键 |
+| `/ssh-files/terminal-resize` | POST | `{ sessionId, cols, rows }` 同步窗口尺寸（远端 PTY `window-change`） |
+| `/ssh-files/terminal-close` | POST | `{ sessionId }` 结束 shell 并清空缓冲；下次附加重开新 shell |
+
+背压：响应 socket 写满时暂停远端通道，`drain` 后恢复，本地不缓存洪泛输出。流断开（切换视图/导航）只解绑观察者，不关 shell。
 
 ## 安全说明
 

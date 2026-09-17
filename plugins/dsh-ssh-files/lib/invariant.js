@@ -1,4 +1,4 @@
-// src/invariant.ts
+// plugins/dsh-ssh-files/src/invariant.ts
 var PACKAGE_NAME = "@deepseek-ai/dsh-ssh-files";
 var name = "ssh-files-invariant";
 var inject = ["invariants"];

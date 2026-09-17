@@ -1,12 +1,12 @@
-// src/index.ts
+// plugins/dsh-ssh-files/src/index.ts
 import { runNativeCommand } from "@deepseek-ai/dsh-native-command";
 import z from "@deepseek-ai/schemastery";
 
-// src/store.ts
+// plugins/dsh-ssh-files/src/store.ts
 import { mkdir as mkdir2, readdir, readFile as readFile3, rename as rename2, stat, unlink as unlink2, writeFile as writeFile2 } from "node:fs/promises";
 import { join } from "node:path";
 
-// src/ssh.ts
+// plugins/dsh-ssh-files/src/ssh.ts
 import { readFile } from "node:fs/promises";
 import { Client } from "ssh2";
 function sftpCall(fn, ...args) {
@@ -386,6 +386,112 @@ var SshConnection = class {
     }
   }
   /**
+   * The connection's ssh2 client, throwing a clear error when not connected.
+   * The shell only needs the transport, not the SFTP channel.
+   */
+  requireClient() {
+    if (this.client === null) throw new Error("\u5C1A\u672A\u8FDE\u63A5\u670D\u52A1\u5668\uFF0C\u8BF7\u5148\u8FDE\u63A5\uFF08ssh_connect \u6216\u53F3\u4FA7\u9762\u677F\uFF09");
+    return this.client;
+  }
+  /**
+   * Open one interactive shell (PTY) on the connection for the panel's
+   * terminal. Output arrives decoded through {@link SshShellHandlers.onData}
+   * and includes the prompt and echo the remote terminal produces; the caller
+   * owns display state, this object owns only the channel.
+   * @param size - initial terminal size (character cells).
+   * @param handlers - output, close, and failure callbacks.
+   * @param signal - aborts the attempt before the channel opens.
+   * @returns the live shell handle.
+   */
+  async openShell(size, handlers, signal) {
+    const client = this.requireClient();
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("\u6253\u5F00\u7EC8\u7AEF\u5DF2\u53D6\u6D88"));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted === true) {
+        onAbort();
+        return;
+      }
+      client.shell({ term: "xterm-256color", cols: size.cols, rows: size.rows }, (error, channel) => {
+        signal?.removeEventListener("abort", onAbort);
+        if (error) {
+          settled = true;
+          reject(error instanceof Error ? error : new Error(String(error)));
+          return;
+        }
+        const decoder = new TextDecoder("utf-8");
+        let alive = true;
+        let handed = false;
+        const shell = {
+          get alive() {
+            return alive;
+          },
+          write: (data) => {
+            if (!alive || data.length === 0) return;
+            try {
+              channel.write(data);
+            } catch {
+            }
+          },
+          resize: ({ cols, rows }) => {
+            if (!alive) return;
+            try {
+              channel.setWindow(rows, cols, 0, 0);
+            } catch {
+            }
+          },
+          pause: () => {
+            try {
+              channel.pause();
+            } catch {
+            }
+          },
+          resume: () => {
+            try {
+              channel.resume();
+            } catch {
+            }
+          },
+          close: () => {
+            try {
+              channel.close();
+            } catch {
+            }
+          }
+        };
+        channel.on("data", (chunk) => {
+          handlers.onData(decoder.decode(chunk, { stream: true }));
+        });
+        channel.stderr?.on("data", (chunk) => {
+          handlers.onData(decoder.decode(chunk, { stream: true }));
+        });
+        channel.on("close", (code, signalName) => {
+          alive = false;
+          if (handed) handlers.onClose({ code: code ?? null, signal: signalName ?? null });
+          else {
+            handed = true;
+            reject(new Error("\u8FDC\u7A0B\u7EC8\u7AEF\u5728\u6253\u5F00\u65F6\u5373\u7ED3\u675F"));
+          }
+        });
+        channel.on("error", (channelError) => {
+          alive = false;
+          if (handed) handlers.onError(channelError);
+          else {
+            handed = true;
+            reject(channelError);
+          }
+        });
+        handed = true;
+        resolve(shell);
+      });
+    });
+  }
+  /**
    * Run one remote command over the ssh2 shell channel and capture its
    * output. The command runs in the login shell; an optional `cwd` first
    * `cd`s into a directory (single-quoted against shell metacharacters).
@@ -453,7 +559,7 @@ var SshConnection = class {
   }
 };
 
-// src/state.ts
+// plugins/dsh-ssh-files/src/state.ts
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile as readFile2, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -567,7 +673,7 @@ async function renameFile(from, to) {
   }
 }
 
-// src/store.ts
+// plugins/dsh-ssh-files/src/store.ts
 async function listLocal(path) {
   const dirents = await readdir(path, { withFileTypes: true });
   const entries = [];
@@ -867,7 +973,138 @@ var SshSessionStore = class {
   }
 };
 
-// src/tools.ts
+// plugins/dsh-ssh-files/src/terminal.ts
+var DEFAULT_BUFFER_CHARS = 2e5;
+var SshTerminalHub = class {
+  /**
+   * @param connectionFor - resolves a session key to its connected SSH
+   *   connection; throwing there surfaces as the stream's failure frame.
+   * @param bufferChars - replay budget per session (characters).
+   */
+  constructor(connectionFor, bufferChars = DEFAULT_BUFFER_CHARS) {
+    this.connectionFor = connectionFor;
+    this.bufferChars = bufferChars;
+  }
+  connectionFor;
+  bufferChars;
+  sessions = /* @__PURE__ */ new Map();
+  /** The runtime for a session key (created lazily). */
+  runtimeFor(sessionId) {
+    let runtime = this.sessions.get(sessionId);
+    if (runtime === void 0) {
+      runtime = {
+        shell: null,
+        buffer: "",
+        trimmed: false,
+        size: { cols: 80, rows: 24 },
+        followers: /* @__PURE__ */ new Set()
+      };
+      this.sessions.set(sessionId, runtime);
+    }
+    return runtime;
+  }
+  /**
+   * Ensure the session has a live shell and return the replay buffer for a
+   * new follower. The first attach opens the shell; a later attach reuses it,
+   * and one after an exit starts a fresh shell (only once its output is known
+   * to have ended for every follower).
+   * @param sessionId - the session key owning the shell.
+   * @param size - the attaching client's terminal size.
+   * @returns the buffered output the client starts from.
+   */
+  async attach(sessionId, size) {
+    const runtime = this.runtimeFor(sessionId);
+    runtime.size = size;
+    if (runtime.shell === null || !runtime.shell.alive) {
+      const connection = this.connectionFor(sessionId);
+      runtime.buffer = "";
+      runtime.trimmed = false;
+      runtime.shell = await connection.openShell(size, {
+        onData: (text2) => {
+          this.append(runtime, text2);
+          this.broadcast(runtime, { kind: "data", data: text2 });
+        },
+        onClose: (outcome) => {
+          runtime.shell = null;
+          this.broadcast(runtime, { kind: "exit", code: outcome.code, signal: outcome.signal });
+        },
+        onError: (error) => {
+          this.broadcast(runtime, { kind: "error", message: error.message });
+        }
+      });
+    }
+    return { snapshot: runtime.buffer, trimmed: runtime.trimmed };
+  }
+  /** Append output to the replay buffer, keeping the tail within the budget. */
+  append(runtime, text2) {
+    if (text2.length === 0) return;
+    const combined = runtime.buffer + text2;
+    if (combined.length <= this.bufferChars) {
+      runtime.buffer = combined;
+      return;
+    }
+    runtime.buffer = combined.slice(combined.length - this.bufferChars);
+    runtime.trimmed = true;
+  }
+  /** Push one frame to every attached stream. */
+  broadcast(runtime, frame) {
+    for (const follower of [...runtime.followers]) {
+      try {
+        follower(frame);
+      } catch {
+        runtime.followers.delete(follower);
+      }
+    }
+  }
+  /**
+   * Attach one stream to a session's frames.
+   * @param sessionId - the session key to follow.
+   * @param listener - receives every frame from now on.
+   * @returns the detach function (idempotent).
+   */
+  subscribe(sessionId, listener) {
+    const runtime = this.runtimeFor(sessionId);
+    runtime.followers.add(listener);
+    return () => {
+      runtime.followers.delete(listener);
+    };
+  }
+  /** Send input to a session's live shell; a no-op when none is open. */
+  write(sessionId, data) {
+    this.sessions.get(sessionId)?.shell?.write(data);
+  }
+  /** Report a client's terminal size; remembered for the next shell too. */
+  resize(sessionId, size) {
+    const runtime = this.runtimeFor(sessionId);
+    runtime.size = size;
+    runtime.shell?.resize(size);
+  }
+  /** End a session's shell and drop its replay buffer. */
+  close(sessionId) {
+    const runtime = this.sessions.get(sessionId);
+    if (runtime === void 0) return;
+    const shell = runtime.shell;
+    runtime.shell = null;
+    runtime.buffer = "";
+    runtime.trimmed = false;
+    shell?.close();
+  }
+  /** Stop the remote channel delivering data (HTTP backpressure). */
+  pause(sessionId) {
+    this.sessions.get(sessionId)?.shell?.pause();
+  }
+  /** Resume a paused remote channel. */
+  resume(sessionId) {
+    this.sessions.get(sessionId)?.shell?.resume();
+  }
+  /** End every shell (host teardown). */
+  dispose() {
+    for (const sessionId of [...this.sessions.keys()]) this.close(sessionId);
+    this.sessions.clear();
+  }
+};
+
+// plugins/dsh-ssh-files/src/tools.ts
 import { defineTool } from "@deepseek-ai/dsh-tools";
 function sessionKeyOf(exec) {
   const id = exec.agent?.id;
@@ -1070,7 +1307,7 @@ ${outcome.stderr}`);
   });
 }
 
-// src/index.ts
+// plugins/dsh-ssh-files/src/index.ts
 var Config = z.object({
   readMaxBytes: z.number().default(1024 * 1024),
   connectTimeoutMs: z.number().default(15e3),
@@ -1078,6 +1315,7 @@ var Config = z.object({
   writeMaxChars: z.number().default(2e5),
   readMaxLines: z.number().default(2e3),
   execMaxChars: z.number().default(2e4),
+  termBufferChars: z.number().default(2e5),
   code: z.string().default("code"),
   marktext: z.string().default("marktext")
 });
@@ -1094,6 +1332,17 @@ function parseMode(payload) {
   if (typeof payload !== "object" || payload === null) return void 0;
   const mode = payload.mode;
   return mode === "local" || mode === "ssh" ? mode : void 0;
+}
+function parseTerminalSize(source) {
+  const cols = toDimension(source.cols, 20, 500);
+  const rows = toDimension(source.rows, 4, 300);
+  if (cols === void 0 || rows === void 0) return void 0;
+  return { cols, rows };
+}
+function toDimension(value, min, max) {
+  const numeric = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  if (typeof numeric !== "number" || !Number.isFinite(numeric)) return void 0;
+  return Math.min(max, Math.max(min, Math.round(numeric)));
 }
 function parseStringField(payload, key) {
   if (typeof payload !== "object" || payload === null) return void 0;
@@ -1201,6 +1450,13 @@ function apply(ctx, config) {
   ctx.effect(() => () => {
     void store.dispose();
   }, "ssh-files: session teardown");
+  const terminals = new SshTerminalHub(
+    (sessionId) => store.requireConnectedFor(sessionId),
+    resolved.termBufferChars
+  );
+  ctx.effect(() => () => {
+    terminals.dispose();
+  }, "ssh-files: terminal teardown");
   registerSshTools(ctx, store, {
     connectTimeoutMs: resolved.connectTimeoutMs,
     readMaxBytes: resolved.readMaxBytes,
@@ -1271,6 +1527,21 @@ function apply(ctx, config) {
           await store.unlink(session, path, signal);
           return { ok: true, value: { removed: true } };
         }
+        case "terminal-write": {
+          const data = parseOptionalString(payload, "data");
+          if (data === void 0) throw new Error("\u7F3A\u5C11\u7EC8\u7AEF\u8F93\u5165");
+          terminals.write(session, data);
+          return { ok: true, value: { written: true } };
+        }
+        case "terminal-resize": {
+          const size = parseTerminalSize(payload ?? {});
+          if (size === void 0) throw new Error("\u7EC8\u7AEF\u5C3A\u5BF8\u65E0\u6548\uFF08\u9700\u8981 cols \u4E0E rows\uFF09");
+          terminals.resize(session, size);
+          return { ok: true, value: { resized: true } };
+        }
+        case "terminal-close":
+          terminals.close(session);
+          return { ok: true, value: { closed: true } };
         case "open-local": {
           const record = payload ?? {};
           const path = parseStringField(record, "path");
@@ -1302,6 +1573,71 @@ function apply(ctx, config) {
     const settle = (response, status, result) => {
       writeJson(response, status, result.ok ? { ok: true, value: result.value } : { ok: false, error: { message: result.message } });
     };
+    const streamTerminal = async (request, response, params) => {
+      const sessionId = params.get("sessionId") ?? "";
+      const size = parseTerminalSize({
+        cols: params.get("cols") ?? void 0,
+        rows: params.get("rows") ?? void 0
+      });
+      if (size === void 0) {
+        settle(response, 400, { ok: false, message: "ssh-files: invalid terminal size (cols, rows)" });
+        return;
+      }
+      const pending = [];
+      let ready = false;
+      let closed = false;
+      let congested = false;
+      const writeFrame = (frame) => {
+        if (closed || response.writableEnded || response.destroyed) return;
+        if (response.write(`${JSON.stringify(frame)}
+`)) return;
+        if (congested) return;
+        congested = true;
+        terminals.pause(sessionId);
+        response.once("drain", () => {
+          congested = false;
+          terminals.resume(sessionId);
+        });
+      };
+      const detach = terminals.subscribe(sessionId, (frame) => {
+        if (ready) writeFrame(frame);
+        else pending.push(frame);
+      });
+      let snapshot;
+      try {
+        snapshot = await terminals.attach(sessionId, size);
+      } catch (error) {
+        detach();
+        settle(response, 409, {
+          ok: false,
+          message: error instanceof Error ? error.message : String(error)
+        });
+        return;
+      }
+      response.writeHead(200, {
+        "content-type": "application/x-ndjson; charset=utf-8",
+        "cache-control": "no-store, no-transform",
+        "x-accel-buffering": "no"
+      });
+      response.flushHeaders();
+      const ping = setInterval(() => {
+        writeFrame({ kind: "ping" });
+      }, 15e3);
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(ping);
+        detach();
+        terminals.resume(sessionId);
+      };
+      request.on("close", cleanup);
+      response.on("close", cleanup);
+      response.on("error", cleanup);
+      writeFrame({ kind: "snapshot", data: snapshot.snapshot, trimmed: snapshot.trimmed });
+      ready = true;
+      for (const frame of pending) writeFrame(frame);
+      pending.length = 0;
+    };
     const route = {
       kind: "prefix",
       path: ROUTE_PATH,
@@ -1312,11 +1648,23 @@ function apply(ctx, config) {
           response.end(rejection === 401 ? "unauthorized" : "forbidden");
           return;
         }
+        const url = new URL(request.url ?? "/", "http://127.0.0.1");
+        const endpoint = url.pathname.slice(ROUTE_PATH.length + 1);
+        if (request.method === "GET") {
+          if (endpoint !== "terminal-stream") {
+            settle(response, 405, {
+              ok: false,
+              message: "ssh-files: GET serves terminal-stream only; every other endpoint is a JSON POST"
+            });
+            return;
+          }
+          await streamTerminal(request, response, url.searchParams);
+          return;
+        }
         if (request.method !== "POST") {
           settle(response, 405, { ok: false, message: "ssh-files: this route accepts POST only" });
           return;
         }
-        const endpoint = new URL(request.url ?? "/", "http://127.0.0.1").pathname.slice(ROUTE_PATH.length + 1);
         let payload;
         try {
           payload = await readJsonBody(request);
@@ -1341,6 +1689,7 @@ function apply(ctx, config) {
 export {
   Config,
   SshSessionStore,
+  SshTerminalHub,
   apply,
   inject,
   name

@@ -511,3 +511,54 @@
   color: var(--dsw-alias-label-primary, #0f172a);
   min-width: 260px;
 }
+
+/* ── view switch (files / terminal) ── */
+
+.viewBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2, #e2e8f0);
+  flex: none;
+}
+
+/* ── terminal ── */
+
+.terminalPane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.terminalBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 4px;
+  flex: none;
+}
+
+.terminalStatus {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary, #475569);
+}
+
+.terminalSpacer {
+  flex: 1;
+}
+
+.terminalHost {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 6px 6px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0b1220;
+}
+
+.terminalHost :global(.xterm) {
+  height: 100%;
+}

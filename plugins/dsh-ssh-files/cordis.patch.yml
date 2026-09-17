@@ -16,3 +16,4 @@
         writeMaxChars: 200000
         readMaxLines: 2000
         execMaxChars: 20000
+        termBufferChars: 200000

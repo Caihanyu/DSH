@@ -67,6 +67,25 @@ export interface SshListing {
   entries: SshFileEntry[]
 }
 
+/** The character-cell size of the panel's terminal. */
+export interface SshTerminalSize {
+  cols: number
+  rows: number
+}
+
+/** One frame of the terminal stream (NDJSON line from the host). */
+export type SshTerminalFrame =
+  /** Replay buffer at attach time: reset the screen, then write it. */
+  | { kind: 'snapshot'; data: string; trimmed: boolean }
+  /** Live terminal output. */
+  | { kind: 'data'; data: string }
+  /** The remote shell ended. */
+  | { kind: 'exit'; code: number | null; signal: string | null }
+  /** The channel failed outside a normal close. */
+  | { kind: 'error'; message: string }
+  /** Keep-alive. */
+  | { kind: 'ping' }
+
 /** The sidebar-tab inject face: all RPC calls this plugin's host route serves. */
 export interface SshFilesInjected {
   /** Read the panel state of one session (mode, servers, connection). */
@@ -101,6 +120,17 @@ export interface SshFilesInjected {
   openLocalCode: (path: string) => Promise<void>
   /** Open a local path in MarkText (the configured `marktext` executable). */
   openLocalMarktext: (path: string) => Promise<void>
+  /**
+   * The session's terminal output stream URL, carrying the attaching size.
+   * Attaching is what opens the remote shell.
+   */
+  terminalStreamUrl: (sessionId: string, size: SshTerminalSize) => string
+  /** Send keystrokes to the session's remote shell. */
+  writeTerminal: (sessionId: string, data: string) => Promise<void>
+  /** Report this client's terminal size to the session's remote PTY. */
+  resizeTerminal: (sessionId: string, size: SshTerminalSize) => Promise<void>
+  /** End the session's remote shell; the next attach starts a fresh one. */
+  closeTerminal: (sessionId: string) => Promise<void>
 }
 
 /** Composed props of the ssh-files sidebar tab body. */
