@@ -191,6 +191,26 @@ export function SshFilesPanel(props: SshFilesPanelProps) {
   return (
     <div className={css.root}>
       <header className={css.header}>
+        <div className={css.modeBar} role="tablist" aria-label={t('view.switch')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'files'}
+            className={view === 'files' ? `${css.modeTab} ${css.modeTabActive}` : css.modeTab}
+            onClick={() => { setView('files') }}
+          >
+            {t('view.files')}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'terminal'}
+            className={view === 'terminal' ? `${css.modeTab} ${css.modeTabActive}` : css.modeTab}
+            onClick={() => { setView('terminal') }}
+          >
+            {t('view.terminal')}
+          </button>
+        </div>
           <div className={css.connBar}>
             {connected && activeServer !== null ? (
               <>
@@ -251,28 +271,6 @@ export function SshFilesPanel(props: SshFilesPanelProps) {
             </button>
           </div>
       </header>
-      <div className={css.viewBar}>
-        <div className={css.modeBar} role="tablist" aria-label={t('view.switch')}>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === 'files'}
-            className={view === 'files' ? `${css.modeTab} ${css.modeTabActive}` : css.modeTab}
-            onClick={() => { setView('files') }}
-          >
-            {t('view.files')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === 'terminal'}
-            className={view === 'terminal' ? `${css.modeTab} ${css.modeTabActive}` : css.modeTab}
-            onClick={() => { setView('terminal') }}
-          >
-            {t('view.terminal')}
-          </button>
-        </div>
-      </div>
       <div className={css.body}>
         {view === 'terminal' && (
           <SshTerminalView

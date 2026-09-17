@@ -39,7 +39,7 @@ var import_react = require("react");
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 
 // dsh-css:D:\dsh-github\DSH\plugins\dsh-ssh-files\src\client\SshFilesPanel.module.css
-var css = ".Kngq_G_root{flex-direction:column;height:100%;min-height:0;display:flex}.Kngq_G_header{border-bottom:1px solid var(--dsw-alias-border-l2,#e2e8f0);flex:none;align-items:center;gap:6px;padding:6px 8px;display:flex}.Kngq_G_modeBar{align-items:center;gap:2px;display:flex}.Kngq_G_modeTab{appearance:none;color:var(--dsw-alias-label-tertiary,#94a3b8);cursor:pointer;background:0 0;border:none;border-radius:999px;padding:2px 10px;font-size:12px;line-height:20px}.Kngq_G_modeTab:hover{background:var(--dsw-alias-interactive-bg-hover,#0000000d);color:var(--dsw-alias-label-primary,#0f172a)}.Kngq_G_modeTabActive{background:var(--dsw-alias-button-primary-fill,#2563eb);color:#fff}.Kngq_G_modeTabActive:hover{background:var(--dsw-alias-button-primary-hover,#1d4ed8);color:#fff}.Kngq_G_connBar{flex:1;align-items:center;gap:6px;min-width:0;display:flex}.Kngq_G_connInfo{color:var(--dsw-alias-label-secondary,#475569);text-overflow:ellipsis;white-space:nowrap;flex:1;align-items:center;gap:5px;min-width:0;font-size:12px;line-height:20px;display:flex;overflow:hidden}.Kngq_G_serverSelect{appearance:none;border:1px solid var(--dsw-alias-border-l2,#e2e8f0);color:var(--dsw-alias-label-primary,#0f172a);cursor:pointer;text-overflow:ellipsis;white-space:nowrap;background:0 0;border-radius:6px;max-width:150px;padding:3px 10px;font-size:12px;line-height:20px;overflow:hidden}.Kngq_G_serverSelect:hover{background:var(--dsw-alias-interactive-bg-hover,#0000000d)}.Kngq_G_close{appearance:none;color:var(--dsw-alias-label-tertiary,#94a3b8);cursor:pointer;background:0 0;border:none;border-radius:6px;place-items:center;width:24px;height:24px;display:grid}.Kngq_G_close:hover{background:var(--dsw-alias-interactive-bg-hover,#0000000d);color:var(--dsw-alias-label-primary,#0f172a)}.Kngq_G_body{flex-direction:column;flex:1;min-height:0;display:flex;overflow:auto}.Kngq_G_empty{color:var(--dsw-alias-label-tertiary,#94a3b8);text-align:center;flex-direction:column;justify-content:center;align-items:center;gap:8px;padding:24px 16px;font-size:13px;line-height:20px;display:flex}.Kngq_G_errorText{color:var(--dsw-alias-state-error-primary,#dc2626);padding:6px 10px;font-size:12px;line-height:18px}.Kngq_G_iconButton{appearance:none;color:var(--dsw-alias-label-tertiary,#94a3b8);cursor:pointer;background:0 0;border:none;border-radius:6px;flex:none;place-items:center;width:24px;height:24px;display:grid}.Kngq_G_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,#0000000d);color:var(--dsw-alias-label-primary,#0f172a)}.Kngq_G_iconButton:disabled{opacity:.45;cursor:default}.Kngq_G_treeRoot{flex-direction:column;flex:1;min-height:0;display:flex}.Kngq_G_treeToolbar{flex:none;align-items:center;gap:2px;padding:4px 6px;display:flex}.Kngq_G_toolbarButton{appearance:none;color:var(--dsw-alias-label-secondary,#475569);cursor:pointer;background:0 0;border:1px solid #0000;border-radius:6px;align-items:center;gap:4px;padding:2px 8px;font-size:12px;line-height:18px;display:inline-flex}.Kngq_G_toolbarButton:hover{background:var(--dsw-alias-interactive-bg-hover,#0000000d)}.Kngq_G_tree{flex:1;min-height:0;padding-bottom:12px;overflow:auto}.Kngq_G_treeRow{align-items:center;height:26px;padding-right:6px;font-size:13px;line-height:20px;display:flex}.Kngq_G_treeRow:hover{background:var(--dsw-alias-interactive-bg-hover,#0000000d)}.Kngq_G_treeChevron{appearance:none;color:var(--dsw-alias-label-tertiary,#94a3b8);cursor:pointer;background:0 0;border:none;flex:none;place-items:center;width:18px;height:18px;display:grid}.Kngq_G_treeLabel{appearance:none;cursor:pointer;min-width:0;color:var(--dsw-alias-label-primary,#0f172a);background:0 0;border:none;flex:1;align-items:center;gap:5px;padding:0;font-size:13px;line-height:20px;display:flex}.Kngq_G_treeName{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.Kngq_G_dirGlyph{color:var(--dsw-alias-state-business-primary,#2563eb);flex:none}.Kngq_G_fileGlyph{flex:none}.Kngq_G_parentLabel{color:var(--dsw-alias-label-tertiary,#94a3b8);width:14px;font-weight:600}.Kngq_G_treeError{color:var(--dsw-alias-state-error-primary,#dc2626);padding:2px 0;font-size:12px;line-height:18px}.Kngq_G_treeEmpty{color:var(--dsw-alias-label-tertiary,#94a3b8);padding:2px 0;font-size:12px;line-height:18px}.Kngq_G_loadingDot{background:var(--dsw-alias-label-tertiary,#94a3b8);border-radius:50%;width:8px;height:8px;animation:.9s ease-in-out infinite Kngq_G_ssh-files-pulse}@keyframes Kngq_G_ssh-files-pulse{0%,to{opacity:.3}50%{opacity:1}}.Kngq_G_editorRoot{flex-direction:column;flex:1;min-height:0;display:flex}.Kngq_G_editorHeader{border-bottom:1px solid var(--dsw-alias-border-l2,#e2e8f0);flex:none;align-items:center;gap:8px;padding:6px 8px;display:flex}.Kngq_G_editorPath{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary,#475569);text-align:left;direction:rtl;flex:1;font-size:12px;overflow:hidden}.Kngq_G_editorActions{flex:none;align-items:center;gap:6px;display:flex}.Kngq_G_editorDirty{color:var(--dsw-alias-state-warn-primary,#d97706);font-size:11px}.Kngq_G_editorStatus{color:var(--dsw-alias-label-tertiary,#94a3b8);padding:8px 12px;font-size:12px}.Kngq_G_editorError{color:var(--dsw-alias-state-error-primary,#dc2626);padding:6px 12px;font-size:12px;line-height:18px}.Kngq_G_editorSaved{background:var(--dsw-alias-state-success-primary,#16a34a);color:#fff;z-index:5;border-radius:999px;padding:3px 10px;font-size:12px;position:absolute;top:48px;right:16px}.Kngq_G_editorTextarea{resize:none;background:var(--dsw-alias-bg-base,#fff);width:100%;min-height:0;color:var(--dsw-alias-label-primary,#0f172a);tab-size:2;border:none;outline:none;flex:1;padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:18px}.Kngq_G_formGrid{flex-direction:column;gap:12px;min-width:320px;display:flex}.Kngq_G_formField{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.Kngq_G_formLabel{color:var(--dsw-alias-label-secondary,#475569);font-size:12px}.Kngq_G_formRow{gap:10px;display:flex}.Kngq_G_authSelect{appearance:none;border:1px solid var(--dsw-alias-border-l2,#e2e8f0);color:var(--dsw-alias-label-primary,#0f172a);cursor:pointer;text-align:left;background:0 0;border-radius:6px;padding:6px 10px;font-size:13px;line-height:20px}.Kngq_G_authSelect:hover{background:var(--dsw-alias-interactive-bg-hover,#0000000d)}.Kngq_G_formError{color:var(--dsw-alias-state-error-primary,#dc2626);font-size:12px;line-height:18px}.Kngq_G_serverList{flex-direction:column;gap:2px;min-width:320px;max-height:320px;display:flex;overflow:auto}.Kngq_G_serverRow{border-radius:6px;align-items:center;gap:8px;padding:6px 8px;display:flex}.Kngq_G_serverRow:hover{background:var(--dsw-alias-interactive-bg-hover,#0000000d)}.Kngq_G_serverInfo{flex:1;align-items:center;gap:8px;min-width:0;display:flex}.Kngq_G_serverIcon{color:var(--dsw-alias-label-tertiary,#94a3b8);flex:none}.Kngq_G_serverText{min-width:0}.Kngq_G_serverName{color:var(--dsw-alias-label-primary,#0f172a);align-items:center;gap:6px;font-size:13px;line-height:20px;display:flex}.Kngq_G_serverMeta{color:var(--dsw-alias-label-tertiary,#94a3b8);text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:18px;overflow:hidden}.Kngq_G_serverActions{flex:none;align-items:center;gap:2px;display:flex}.Kngq_G_connectedPill{font-size:11px}.Kngq_G_createDir{color:var(--dsw-alias-label-tertiary,#94a3b8);text-overflow:ellipsis;white-space:nowrap;margin-bottom:8px;font-size:12px;overflow:hidden}.Kngq_G_deleteText{color:var(--dsw-alias-label-primary,#0f172a);min-width:260px;font-size:13px;line-height:20px}.Kngq_G_viewBar{border-bottom:1px solid var(--dsw-alias-border-l2,#e2e8f0);flex:none;align-items:center;gap:6px;padding:4px 8px;display:flex}.Kngq_G_terminalPane{flex-direction:column;flex:1;min-height:0;display:flex}.Kngq_G_terminalBar{flex:none;align-items:center;gap:6px;padding:6px 4px;display:flex}.Kngq_G_terminalStatus{color:var(--dsw-alias-label-secondary,#475569);font-size:12px;line-height:20px}.Kngq_G_terminalSpacer{flex:1}.Kngq_G_terminalHost{background:#0b1220;border-radius:8px;flex:1;min-height:0;padding:4px 6px 6px;overflow:hidden}.Kngq_G_terminalHost .xterm{height:100%}";
+var css = ".Kngq_G_root{flex-direction:column;height:100%;min-height:0;display:flex}.Kngq_G_header{box-sizing:border-box;border-bottom:.5px solid var(--dsw-alias-border-l3);flex:none;align-items:center;gap:4px;height:38px;padding:0 6px 0 16px;display:flex}.Kngq_G_modeBar{flex:none;align-items:center;gap:2px;display:flex}.Kngq_G_modeTab{appearance:none;height:28px;color:var(--dsw-alias-label-secondary);font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer;white-space:nowrap;background:0 0;border:none;border-radius:12px;align-items:center;padding:0 10px;line-height:1;display:inline-flex}.Kngq_G_modeTab:hover{background:var(--dsw-alias-interactive-bg-hover)}.Kngq_G_modeTabActive{background:var(--dsw-alias-markdown-tag);color:var(--dsw-alias-label-primary)}.Kngq_G_modeTabActive:hover{background:var(--dsw-alias-markdown-tag)}.Kngq_G_connBar{flex:1;align-items:center;gap:6px;min-width:0;display:flex}.Kngq_G_connInfo{color:var(--dsw-alias-label-secondary,#475569);text-overflow:ellipsis;white-space:nowrap;flex:1;align-items:center;gap:5px;min-width:0;font-size:12px;line-height:20px;display:flex;overflow:hidden}.Kngq_G_serverSelect{appearance:none;border:.5px solid var(--dsw-alias-border-l3);color:var(--dsw-alias-label-primary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);cursor:pointer;text-overflow:ellipsis;white-space:nowrap;background:0 0;border-radius:8px;max-width:150px;height:26px;padding:0 10px;overflow:hidden}.Kngq_G_serverSelect:hover{background:var(--dsw-alias-interactive-bg-hover)}.Kngq_G_close{appearance:none;color:var(--dsw-alias-label-tertiary,#94a3b8);cursor:pointer;background:0 0;border:none;border-radius:6px;place-items:center;width:24px;height:24px;display:grid}.Kngq_G_close:hover{background:var(--dsw-alias-interactive-bg-hover,#0000000d);color:var(--dsw-alias-label-primary,#0f172a)}.Kngq_G_body{flex-direction:column;flex:1;min-height:0;display:flex;overflow:auto}.Kngq_G_empty{color:var(--dsw-alias-label-tertiary,#94a3b8);text-align:center;flex-direction:column;justify-content:center;align-items:center;gap:8px;padding:24px 16px;font-size:13px;line-height:20px;display:flex}.Kngq_G_errorText{color:var(--dsw-alias-state-error-primary,#dc2626);padding:6px 10px;font-size:12px;line-height:18px}.Kngq_G_iconButton{appearance:none;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:28px;flex:none;justify-content:center;align-items:center;width:28px;height:28px;padding:6px;line-height:1;display:inline-flex}.Kngq_G_iconButton svg{width:15px;height:15px}.Kngq_G_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.Kngq_G_iconButton:disabled{opacity:.45;cursor:default}.Kngq_G_treeRoot{min-height:0;color:var(--dsw-alias-label-primary);font-size:var(--dsh-content-font-size-secondary,13px);flex-direction:column;flex:auto;line-height:1.5;display:flex}.Kngq_G_treeToolbar{box-sizing:border-box;border-bottom:.5px solid var(--dsw-alias-border-l3);flex:none;align-items:center;gap:4px;height:38px;padding:0 6px 0 16px;display:flex}.Kngq_G_treePath{white-space:nowrap;flex:auto;min-width:0;margin-right:12px;font-size:12px;display:flex;overflow:hidden}.Kngq_G_treePathDirectory{color:var(--dsw-alias-label-tertiary)}.Kngq_G_treePathName{color:var(--dsw-alias-label-primary)}.Kngq_G_toolbarButton{appearance:none;width:28px;height:28px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:28px;flex:none;justify-content:center;align-items:center;padding:6px;line-height:1;display:inline-flex}.Kngq_G_toolbarButton svg{width:15px;height:15px}.Kngq_G_toolbarButton:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.Kngq_G_chipButton{appearance:none;height:26px;color:var(--dsw-alias-label-secondary);font:inherit;font-size:var(--dsh-content-font-size-secondary,13px);border:.5px solid var(--dsw-alias-border-l3);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;flex:none;align-items:center;padding:0 10px;display:inline-flex}.Kngq_G_chipButton:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.Kngq_G_tree{scrollbar-gutter:stable;flex:auto;min-height:0;margin-right:2px;padding:8px 0 8px 8px;overflow:auto}.Kngq_G_tree::-webkit-scrollbar-track{margin:2px}.Kngq_G_level{margin:0;padding:0;list-style:none}.Kngq_G_level .Kngq_G_level{padding-left:18px}.Kngq_G_item{margin:0;padding:0}.Kngq_G_treeRow{box-sizing:border-box;width:100%;min-width:0;color:inherit;font:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:6px;padding:5px 10px;display:flex}.Kngq_G_treeRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.Kngq_G_treeLabel{min-width:0;color:inherit;font:inherit;text-align:left;cursor:pointer;background:0 0;border:0;flex:auto;align-items:center;gap:6px;padding:0;display:flex}.Kngq_G_dirIcon{color:var(--dsw-alias-label-tertiary);flex:none}.Kngq_G_fileIcon{flex:none}.Kngq_G_treeName{white-space:nowrap;text-overflow:ellipsis;min-width:0;overflow:hidden}.Kngq_G_rowActions{flex:none;align-items:center;display:inline-flex}.Kngq_G_rowAction{appearance:none;width:22px;height:22px;color:var(--dsw-alias-label-tertiary);cursor:pointer;opacity:0;background:0 0;border:none;border-radius:22px;justify-content:center;align-items:center;padding:4px;line-height:1;display:inline-flex}.Kngq_G_rowAction svg{width:14px;height:14px}.Kngq_G_treeRow:hover .Kngq_G_rowAction,.Kngq_G_treeRow:focus-within .Kngq_G_rowAction{opacity:1}.Kngq_G_rowAction:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.Kngq_G_note{color:var(--dsw-alias-label-tertiary);margin:0;padding:3px 10px;font-size:12px}.Kngq_G_noteError{color:var(--dsw-alias-state-error-primary)}.Kngq_G_parentLabel{color:var(--dsw-alias-label-tertiary)}.Kngq_G_loadingDot{background:var(--dsw-alias-label-tertiary,#94a3b8);border-radius:50%;width:8px;height:8px;animation:.9s ease-in-out infinite Kngq_G_ssh-files-pulse}@keyframes Kngq_G_ssh-files-pulse{0%,to{opacity:.3}50%{opacity:1}}.Kngq_G_editorRoot{flex-direction:column;flex:1;min-height:0;display:flex}.Kngq_G_editorHeader{border-bottom:1px solid var(--dsw-alias-border-l2,#e2e8f0);flex:none;align-items:center;gap:8px;padding:6px 8px;display:flex}.Kngq_G_editorPath{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary,#475569);text-align:left;direction:rtl;flex:1;font-size:12px;overflow:hidden}.Kngq_G_editorActions{flex:none;align-items:center;gap:6px;display:flex}.Kngq_G_editorDirty{color:var(--dsw-alias-state-warn-primary,#d97706);font-size:11px}.Kngq_G_editorStatus{color:var(--dsw-alias-label-tertiary,#94a3b8);padding:8px 12px;font-size:12px}.Kngq_G_editorError{color:var(--dsw-alias-state-error-primary,#dc2626);padding:6px 12px;font-size:12px;line-height:18px}.Kngq_G_editorSaved{background:var(--dsw-alias-state-success-primary,#16a34a);color:#fff;z-index:5;border-radius:999px;padding:3px 10px;font-size:12px;position:absolute;top:48px;right:16px}.Kngq_G_editorTextarea{resize:none;background:var(--dsw-alias-bg-base,#fff);width:100%;min-height:0;color:var(--dsw-alias-label-primary,#0f172a);tab-size:2;border:none;outline:none;flex:1;padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:18px}.Kngq_G_formGrid{flex-direction:column;gap:12px;min-width:320px;display:flex}.Kngq_G_formField{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.Kngq_G_formLabel{color:var(--dsw-alias-label-secondary,#475569);font-size:12px}.Kngq_G_formRow{gap:10px;display:flex}.Kngq_G_authSelect{appearance:none;border:1px solid var(--dsw-alias-border-l2,#e2e8f0);color:var(--dsw-alias-label-primary,#0f172a);cursor:pointer;text-align:left;background:0 0;border-radius:6px;padding:6px 10px;font-size:13px;line-height:20px}.Kngq_G_authSelect:hover{background:var(--dsw-alias-interactive-bg-hover,#0000000d)}.Kngq_G_formError{color:var(--dsw-alias-state-error-primary,#dc2626);font-size:12px;line-height:18px}.Kngq_G_serverList{flex-direction:column;gap:2px;min-width:320px;max-height:320px;display:flex;overflow:auto}.Kngq_G_serverRow{border-radius:6px;align-items:center;gap:8px;padding:6px 8px;display:flex}.Kngq_G_serverRow:hover{background:var(--dsw-alias-interactive-bg-hover,#0000000d)}.Kngq_G_serverInfo{flex:1;align-items:center;gap:8px;min-width:0;display:flex}.Kngq_G_serverIcon{color:var(--dsw-alias-label-tertiary,#94a3b8);flex:none}.Kngq_G_serverText{min-width:0}.Kngq_G_serverName{color:var(--dsw-alias-label-primary,#0f172a);align-items:center;gap:6px;font-size:13px;line-height:20px;display:flex}.Kngq_G_serverMeta{color:var(--dsw-alias-label-tertiary,#94a3b8);text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:18px;overflow:hidden}.Kngq_G_serverActions{flex:none;align-items:center;gap:2px;display:flex}.Kngq_G_connectedPill{font-size:11px}.Kngq_G_createDir{color:var(--dsw-alias-label-tertiary,#94a3b8);text-overflow:ellipsis;white-space:nowrap;margin-bottom:8px;font-size:12px;overflow:hidden}.Kngq_G_deleteText{color:var(--dsw-alias-label-primary,#0f172a);min-width:260px;font-size:13px;line-height:20px}.Kngq_G_terminalPane{flex-direction:column;flex:auto;min-height:0;display:flex}.Kngq_G_terminalBar{background:var(--dsw-alias-bg-l2);flex:none;align-items:center;gap:8px;padding:5px 12px;display:flex}.Kngq_G_terminalStatus{font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.Kngq_G_terminalSpacer{flex:1}.Kngq_G_terminalScreen{min-width:0;min-height:0;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);flex:auto;padding:8px;overflow:hidden}.Kngq_G_terminalScreen .xterm{height:100%}.Kngq_G_terminalScreen .xterm-viewport{background:var(--dsw-alias-bg-base)}.Kngq_G_terminalHost{height:100%}";
 var tagId = "@deepseek-ai/dsh-ssh-files/SshFilesPanel.module.css";
 if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
   const tag = document.createElement("style");
@@ -48,7 +48,7 @@ if (typeof document !== "undefined" && document.querySelector("style[data-plugin
   tag.textContent = css;
   document.head.appendChild(tag);
 }
-var SshFilesPanel_default = { "authSelect": "Kngq_G_authSelect", "body": "Kngq_G_body", "close": "Kngq_G_close", "connBar": "Kngq_G_connBar", "connInfo": "Kngq_G_connInfo", "connectedPill": "Kngq_G_connectedPill", "createDir": "Kngq_G_createDir", "deleteText": "Kngq_G_deleteText", "dirGlyph": "Kngq_G_dirGlyph", "editorActions": "Kngq_G_editorActions", "editorDirty": "Kngq_G_editorDirty", "editorError": "Kngq_G_editorError", "editorHeader": "Kngq_G_editorHeader", "editorPath": "Kngq_G_editorPath", "editorRoot": "Kngq_G_editorRoot", "editorSaved": "Kngq_G_editorSaved", "editorStatus": "Kngq_G_editorStatus", "editorTextarea": "Kngq_G_editorTextarea", "empty": "Kngq_G_empty", "errorText": "Kngq_G_errorText", "fileGlyph": "Kngq_G_fileGlyph", "formError": "Kngq_G_formError", "formField": "Kngq_G_formField", "formGrid": "Kngq_G_formGrid", "formLabel": "Kngq_G_formLabel", "formRow": "Kngq_G_formRow", "header": "Kngq_G_header", "iconButton": "Kngq_G_iconButton", "loadingDot": "Kngq_G_loadingDot", "modeBar": "Kngq_G_modeBar", "modeTab": "Kngq_G_modeTab", "modeTabActive": "Kngq_G_modeTabActive", "parentLabel": "Kngq_G_parentLabel", "root": "Kngq_G_root", "serverActions": "Kngq_G_serverActions", "serverIcon": "Kngq_G_serverIcon", "serverInfo": "Kngq_G_serverInfo", "serverList": "Kngq_G_serverList", "serverMeta": "Kngq_G_serverMeta", "serverName": "Kngq_G_serverName", "serverRow": "Kngq_G_serverRow", "serverSelect": "Kngq_G_serverSelect", "serverText": "Kngq_G_serverText", "ssh-files-pulse": "Kngq_G_ssh-files-pulse", "terminalBar": "Kngq_G_terminalBar", "terminalHost": "Kngq_G_terminalHost", "terminalPane": "Kngq_G_terminalPane", "terminalSpacer": "Kngq_G_terminalSpacer", "terminalStatus": "Kngq_G_terminalStatus", "toolbarButton": "Kngq_G_toolbarButton", "tree": "Kngq_G_tree", "treeChevron": "Kngq_G_treeChevron", "treeEmpty": "Kngq_G_treeEmpty", "treeError": "Kngq_G_treeError", "treeLabel": "Kngq_G_treeLabel", "treeName": "Kngq_G_treeName", "treeRoot": "Kngq_G_treeRoot", "treeRow": "Kngq_G_treeRow", "treeToolbar": "Kngq_G_treeToolbar", "viewBar": "Kngq_G_viewBar" };
+var SshFilesPanel_default = { "authSelect": "Kngq_G_authSelect", "body": "Kngq_G_body", "chipButton": "Kngq_G_chipButton", "close": "Kngq_G_close", "connBar": "Kngq_G_connBar", "connInfo": "Kngq_G_connInfo", "connectedPill": "Kngq_G_connectedPill", "createDir": "Kngq_G_createDir", "deleteText": "Kngq_G_deleteText", "dirIcon": "Kngq_G_dirIcon", "editorActions": "Kngq_G_editorActions", "editorDirty": "Kngq_G_editorDirty", "editorError": "Kngq_G_editorError", "editorHeader": "Kngq_G_editorHeader", "editorPath": "Kngq_G_editorPath", "editorRoot": "Kngq_G_editorRoot", "editorSaved": "Kngq_G_editorSaved", "editorStatus": "Kngq_G_editorStatus", "editorTextarea": "Kngq_G_editorTextarea", "empty": "Kngq_G_empty", "errorText": "Kngq_G_errorText", "fileIcon": "Kngq_G_fileIcon", "formError": "Kngq_G_formError", "formField": "Kngq_G_formField", "formGrid": "Kngq_G_formGrid", "formLabel": "Kngq_G_formLabel", "formRow": "Kngq_G_formRow", "header": "Kngq_G_header", "iconButton": "Kngq_G_iconButton", "item": "Kngq_G_item", "level": "Kngq_G_level", "loadingDot": "Kngq_G_loadingDot", "modeBar": "Kngq_G_modeBar", "modeTab": "Kngq_G_modeTab", "modeTabActive": "Kngq_G_modeTabActive", "note": "Kngq_G_note", "noteError": "Kngq_G_noteError", "parentLabel": "Kngq_G_parentLabel", "root": "Kngq_G_root", "rowAction": "Kngq_G_rowAction", "rowActions": "Kngq_G_rowActions", "serverActions": "Kngq_G_serverActions", "serverIcon": "Kngq_G_serverIcon", "serverInfo": "Kngq_G_serverInfo", "serverList": "Kngq_G_serverList", "serverMeta": "Kngq_G_serverMeta", "serverName": "Kngq_G_serverName", "serverRow": "Kngq_G_serverRow", "serverSelect": "Kngq_G_serverSelect", "serverText": "Kngq_G_serverText", "ssh-files-pulse": "Kngq_G_ssh-files-pulse", "terminalBar": "Kngq_G_terminalBar", "terminalHost": "Kngq_G_terminalHost", "terminalPane": "Kngq_G_terminalPane", "terminalScreen": "Kngq_G_terminalScreen", "terminalSpacer": "Kngq_G_terminalSpacer", "terminalStatus": "Kngq_G_terminalStatus", "toolbarButton": "Kngq_G_toolbarButton", "tree": "Kngq_G_tree", "treeLabel": "Kngq_G_treeLabel", "treeName": "Kngq_G_treeName", "treePath": "Kngq_G_treePath", "treePathDirectory": "Kngq_G_treePathDirectory", "treePathName": "Kngq_G_treePathName", "treeRoot": "Kngq_G_treeRoot", "treeRow": "Kngq_G_treeRow", "treeToolbar": "Kngq_G_treeToolbar" };
 
 // plugins/dsh-ssh-files/src/client/file-editor.tsx
 var import_jsx_runtime = require("react/jsx-runtime");
@@ -193,31 +193,16 @@ function parentOf(path) {
   if (index <= 0) return path;
   return trimmed.slice(0, index);
 }
-function FileGlyph({ kind }) {
-  return kind === "dir" ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.IconFolderClose16, { className: SshFilesPanel_default.dirGlyph }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("svg", { viewBox: "0 0 16 16", width: "15", height: "15", "aria-hidden": true, className: SshFilesPanel_default.fileGlyph, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-      "path",
-      {
-        d: "M4 1.5h5l3.5 3.5v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z",
-        fill: "var(--dsw-alias-label-tertiary, #94a3b8)",
-        opacity: "0.18"
-      }
-    ),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-      "path",
-      {
-        d: "M4 1.5h5l3.5 3.5v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z",
-        fill: "none",
-        stroke: "var(--dsw-alias-label-tertiary, #94a3b8)",
-        strokeWidth: "1.1"
-      }
-    ),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("path", { d: "M9 1.5v3.5h3.5", fill: "none", stroke: "var(--dsw-alias-label-tertiary, #94a3b8)", strokeWidth: "1.1" })
-  ] });
+function pathParts(path) {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const index = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  if (index < 0) return { directory: "", name: trimmed };
+  const name = trimmed.slice(index + 1);
+  const directory = index === 0 ? "/" : trimmed.slice(0, index + 1);
+  return { directory, name: name === "" ? trimmed : name };
 }
 function TreeRow({
   entry,
-  depth,
   list,
   showHidden,
   onOpenFile,
@@ -246,8 +231,8 @@ function TreeRow({
     try {
       const listing = await list(entry.path);
       setChildren(listing.entries);
-    } catch (error2) {
-      setError(error2 instanceof Error ? error2.message : String(error2));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setLoading(false);
     }
@@ -278,66 +263,63 @@ function TreeRow({
     }
   };
   const visibleChildren = showHidden ? children ?? [] : (children ?? []).filter((child) => !child.hidden);
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
-      "div",
-      {
-        className: `${SshFilesPanel_default.treeRow} ${entry.kind === "dir" ? SshFilesPanel_default.treeRowDir : SshFilesPanel_default.treeRowFile}`,
-        "data-kind": entry.kind,
-        style: { paddingLeft: `${8 + depth * 14}px` },
-        role: "treeitem",
-        "aria-expanded": entry.kind === "dir" ? expanded : void 0,
-        children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { type: "button", className: SshFilesPanel_default.treeChevron, "aria-hidden": true, tabIndex: -1, onClick: () => {
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("li", { className: SshFilesPanel_default.item, "data-ssh-entry": entry.kind, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: SshFilesPanel_default.treeRow, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(
+        "button",
+        {
+          type: "button",
+          className: SshFilesPanel_default.treeLabel,
+          onClick: () => {
             void toggle();
-          }, children: entry.kind === "dir" ? loading ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: SshFilesPanel_default.loadingDot }) : expanded ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.IconChevronDownOutline14, {}) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.IconChevronRightOutline14, {}) : null }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("button", { type: "button", className: SshFilesPanel_default.treeLabel, onClick: () => {
-            void toggle();
-          }, title: entry.path, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(FileGlyph, { kind: entry.kind }),
+          },
+          title: entry.path,
+          "aria-expanded": entry.kind === "dir" ? expanded : void 0,
+          children: [
+            entry.kind === "dir" ? expanded ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.IconFolderOpen16, { className: SshFilesPanel_default.dirIcon }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.IconFolderClose16, { className: SshFilesPanel_default.dirIcon }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.FileTypeIcon, { kind: (0, import_dsh_client_ui_primitives2.classifyFileType)(entry.name), size: 16, className: SshFilesPanel_default.fileIcon }),
             /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: SshFilesPanel_default.treeName, children: entry.name })
-          ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-            import_dsh_client_ui_primitives2.Menu,
+          ]
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: SshFilesPanel_default.rowActions, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        import_dsh_client_ui_primitives2.Menu,
+        {
+          open: menuOpen,
+          onClose: () => {
+            setMenuOpen(false);
+          },
+          items: menuItems,
+          onSelect: onMenuSelect,
+          align: "end",
+          portal: true,
+          anchor: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+            "button",
             {
-              open: menuOpen,
-              onClose: () => {
-                setMenuOpen(false);
+              type: "button",
+              className: SshFilesPanel_default.rowAction,
+              "aria-haspopup": "menu",
+              "aria-expanded": menuOpen,
+              "aria-label": entry.name,
+              onClick: () => {
+                setMenuOpen(true);
               },
-              items: menuItems,
-              onSelect: onMenuSelect,
-              align: "end",
-              portal: true,
-              anchor: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-                "button",
-                {
-                  type: "button",
-                  className: SshFilesPanel_default.iconButton,
-                  "aria-haspopup": "menu",
-                  "aria-expanded": menuOpen,
-                  "aria-label": entry.name,
-                  onClick: () => {
-                    setMenuOpen(true);
-                  },
-                  children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.IconEllipsisOutline16, {})
-                }
-              )
+              children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.IconEllipsisOutline16, {})
             }
           )
-        ]
-      }
-    ),
-    expanded && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { role: "group", children: [
-      error !== null && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: SshFilesPanel_default.treeError, style: { paddingLeft: `${24 + depth * 14}px` }, children: [
+        }
+      ) })
+    ] }),
+    expanded && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("ul", { className: SshFilesPanel_default.level, children: [
+      loading && children === null && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("li", { className: SshFilesPanel_default.note, children: t("tree.loading") }),
+      error !== null && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("li", { className: `${SshFilesPanel_default.note} ${SshFilesPanel_default.noteError}`, role: "alert", children: [
         t("tree.error"),
         "\uFF1A",
         error
       ] }),
-      visibleChildren.map((child) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      children !== null && visibleChildren.map((child) => /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
         TreeRow,
         {
           entry: child,
-          depth: depth + 1,
           list,
           showHidden,
           onOpenFile,
@@ -347,7 +329,7 @@ function TreeRow({
         },
         child.path
       )),
-      visibleChildren.length === 0 && error === null && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: SshFilesPanel_default.treeEmpty, style: { paddingLeft: `${24 + depth * 14}px` }, children: t("tree.empty") })
+      children !== null && visibleChildren.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("li", { className: SshFilesPanel_default.note, children: t("tree.empty") })
     ] })
   ] });
 }
@@ -355,11 +337,27 @@ function FileTree({ root, list, onOpenFile, onCreate, onDelete, t }) {
   const [refreshKey, setRefreshKey] = (0, import_react2.useState)(0);
   const [showHidden, setShowHidden] = (0, import_react2.useState)(false);
   const [parentMenu, setParentMenu] = (0, import_react2.useState)(false);
-  const [failure, setFailure] = (0, import_react2.useState)(null);
   const rootEntry = { name: root, path: root, kind: "dir", hidden: false };
   const parent = parentOf(root);
+  const { directory, name } = pathParts(root);
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: SshFilesPanel_default.treeRoot, children: [
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: SshFilesPanel_default.treeToolbar, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: SshFilesPanel_default.treePath, title: root, children: [
+        directory !== "" && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: SshFilesPanel_default.treePathDirectory, children: directory }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: SshFilesPanel_default.treePathName, children: name })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        "button",
+        {
+          type: "button",
+          className: SshFilesPanel_default.chipButton,
+          onClick: () => {
+            setShowHidden((value) => !value);
+          },
+          title: showHidden ? t("tree.hideHidden") : t("tree.showHidden"),
+          children: showHidden ? t("tree.hideHidden") : t("tree.showHidden")
+        }
+      ),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
         "button",
         {
@@ -370,25 +368,12 @@ function FileTree({ root, list, onOpenFile, onCreate, onDelete, t }) {
           },
           title: t("tree.refresh"),
           "aria-label": t("tree.refresh"),
-          children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.IconRefreshOutline14, {})
-        }
-      ),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-        "button",
-        {
-          type: "button",
-          className: SshFilesPanel_default.toolbarButton,
-          onClick: () => {
-            setShowHidden((value) => !value);
-          },
-          title: showHidden ? t("tree.hideHidden") : t("tree.showHidden"),
-          children: showHidden ? t("tree.showHidden") : t("tree.hideHidden")
+          children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.IconRefreshOutline16, {})
         }
       )
     ] }),
-    failure !== null && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: SshFilesPanel_default.treeError, role: "alert", children: t("tree.openFailed", { message: failure.message }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { role: "tree", "aria-label": root, className: SshFilesPanel_default.tree, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: SshFilesPanel_default.treeRow, "data-kind": "dir", style: { paddingLeft: "8px" }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: SshFilesPanel_default.tree, role: "tree", "aria-label": root, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("ul", { className: SshFilesPanel_default.level, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("li", { className: SshFilesPanel_default.item, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: SshFilesPanel_default.treeRow, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
         import_dsh_client_ui_primitives2.Menu,
         {
           open: parentMenu,
@@ -416,18 +401,17 @@ function FileTree({ root, list, onOpenFile, onCreate, onDelete, t }) {
               },
               title: t("tree.parent"),
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: SshFilesPanel_default.parentLabel, children: ".." }),
+                /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.IconFolderOpenOutline16, { className: SshFilesPanel_default.dirIcon }),
                 /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: SshFilesPanel_default.treeName, children: t("tree.parent") })
               ]
             }
           )
         }
-      ) }),
+      ) }) }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
         TreeRow,
         {
           entry: rootEntry,
-          depth: 0,
           list,
           showHidden,
           onOpenFile,
@@ -437,7 +421,7 @@ function FileTree({ root, list, onOpenFile, onCreate, onDelete, t }) {
         },
         `${root}-${refreshKey}`
       )
-    ] })
+    ] }) })
   ] });
 }
 
@@ -9956,33 +9940,48 @@ function parseFrame(line) {
 }
 function SshTerminalView(props) {
   const { sessionId, connected, t, terminalStreamUrl, writeTerminal, resizeTerminal, closeTerminal } = props;
-  const hostRef = (0, import_react4.useRef)(null);
+  const screenRef = (0, import_react4.useRef)(null);
   const termRef = (0, import_react4.useRef)(null);
   const [status, setStatus] = (0, import_react4.useState)("connecting");
   const [error, setError] = (0, import_react4.useState)(null);
   const [attempt, setAttempt] = (0, import_react4.useState)(0);
   (0, import_react4.useEffect)(() => {
-    const host = hostRef.current;
-    if (host === null || !connected) return;
+    const screen = screenRef.current;
+    if (screen === null || !connected) return;
     setStatus("connecting");
     setError(null);
     const term = new Dl({
-      convertEol: false,
+      minimumContrastRatio: 4.5,
       cursorBlink: true,
-      fontFamily: 'Consolas, "Cascadia Mono", "Courier New", monospace',
       fontSize: 13,
-      scrollback: 5e3,
-      theme: {
-        background: "#0b1220",
-        foreground: "#e2e8f0",
-        cursor: "#e2e8f0",
-        selectionBackground: "rgba(148, 163, 184, 0.4)"
-      }
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      scrollback: 5e3
     });
     const fit = new o();
     term.loadAddon(fit);
-    term.open(host);
+    term.open(screen);
+    term.textarea?.setAttribute("aria-label", t("view.terminal"));
     termRef.current = term;
+    const applyTheme = () => {
+      const element = screenRef.current;
+      if (element === null) return;
+      const style = getComputedStyle(element);
+      const background = style.backgroundColor;
+      const foreground = style.color;
+      term.options.theme = {
+        background,
+        foreground,
+        cursor: foreground,
+        cursorAccent: background,
+        selectionBackground: foreground,
+        selectionForeground: background
+      };
+    };
+    applyTheme();
+    const themeObserver = new MutationObserver(applyTheme);
+    themeObserver.observe(document.body, { attributes: true });
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    media.addEventListener("change", applyTheme);
     try {
       fit.fit();
     } catch {
@@ -10066,11 +10065,13 @@ function SshTerminalView(props) {
       } catch {
       }
     });
-    observer.observe(host);
+    observer.observe(screen);
     return () => {
       disposed = true;
       controller.abort();
       observer.disconnect();
+      themeObserver.disconnect();
+      media.removeEventListener("change", applyTheme);
       input.dispose();
       resize.dispose();
       term.dispose();
@@ -10115,7 +10116,7 @@ function SshTerminalView(props) {
       )
     ] }),
     error !== null && /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: SshFilesPanel_default.errorText, role: "alert", children: t("term.failed", { message: error }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: SshFilesPanel_default.terminalHost, ref: hostRef })
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: SshFilesPanel_default.terminalScreen, ref: screenRef })
   ] });
 }
 
@@ -10287,104 +10288,106 @@ function SshFilesPanel(props) {
     label: `${server.name}\uFF08${server.username}@${server.host}\uFF09`
   }));
   return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: SshFilesPanel_default.root, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("header", { className: SshFilesPanel_default.header, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: SshFilesPanel_default.connBar, children: [
-      connected && activeServer !== null ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: SshFilesPanel_default.connInfo, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.StateDot, { state: "done" }),
-          t("conn.connectedTo", { name: activeServer.name })
-        ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("header", { className: SshFilesPanel_default.header, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: SshFilesPanel_default.modeBar, role: "tablist", "aria-label": t("view.switch"), children: [
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-          import_dsh_client_ui_primitives5.Button,
+          "button",
           {
-            variant: "outline",
-            size: "sm",
-            icon: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.IconPlusOutline16, {}),
-            title: t("conn.newSessionOn"),
+            type: "button",
+            role: "tab",
+            "aria-selected": view === "files",
+            className: view === "files" ? `${SshFilesPanel_default.modeTab} ${SshFilesPanel_default.modeTabActive}` : SshFilesPanel_default.modeTab,
             onClick: () => {
-              void handleNewSessionOn(activeServer.id);
+              setView("files");
             },
-            children: t("conn.newSessionOn")
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.Button, { variant: "outline", size: "sm", onClick: () => {
-          void handleDisconnect();
-        }, children: t("conn.disconnect") })
-      ] }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-          import_dsh_client_ui_primitives5.Menu,
-          {
-            open: serverMenuOpen,
-            onClose: () => {
-              setServerMenuOpen(false);
-            },
-            items: serverMenuItems,
-            selectedId: selectedServer?.id,
-            onSelect: (id) => {
-              setServerMenuOpen(false);
-              setSelectedId(id);
-            },
-            align: "end",
-            portal: true,
-            anchor: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: SshFilesPanel_default.serverSelect, onClick: () => {
-              setServerMenuOpen(true);
-            }, children: selectedServer?.name ?? t("conn.select") })
+            children: t("view.files")
           }
         ),
         /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-          import_dsh_client_ui_primitives5.Button,
+          "button",
           {
-            variant: "primary",
-            size: "sm",
-            disabled: selectedServer === null || connectingId !== null,
+            type: "button",
+            role: "tab",
+            "aria-selected": view === "terminal",
+            className: view === "terminal" ? `${SshFilesPanel_default.modeTab} ${SshFilesPanel_default.modeTabActive}` : SshFilesPanel_default.modeTab,
             onClick: () => {
-              if (selectedServer !== null) void handleConnect(selectedServer.id);
+              setView("terminal");
             },
-            children: connectingId !== null ? t("conn.connecting") : t("conn.connect")
+            children: t("view.terminal")
           }
         )
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-        "button",
-        {
-          type: "button",
-          className: SshFilesPanel_default.iconButton,
-          "aria-label": t("conn.manage"),
-          title: t("conn.manage"),
-          onClick: () => {
-            setManageOpen(true);
-          },
-          children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.IconSettingsOutline14, {})
-        }
-      )
-    ] }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: SshFilesPanel_default.viewBar, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: SshFilesPanel_default.modeBar, role: "tablist", "aria-label": t("view.switch"), children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-        "button",
-        {
-          type: "button",
-          role: "tab",
-          "aria-selected": view === "files",
-          className: view === "files" ? `${SshFilesPanel_default.modeTab} ${SshFilesPanel_default.modeTabActive}` : SshFilesPanel_default.modeTab,
-          onClick: () => {
-            setView("files");
-          },
-          children: t("view.files")
-        }
-      ),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
-        "button",
-        {
-          type: "button",
-          role: "tab",
-          "aria-selected": view === "terminal",
-          className: view === "terminal" ? `${SshFilesPanel_default.modeTab} ${SshFilesPanel_default.modeTabActive}` : SshFilesPanel_default.modeTab,
-          onClick: () => {
-            setView("terminal");
-          },
-          children: t("view.terminal")
-        }
-      )
-    ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: SshFilesPanel_default.connBar, children: [
+        connected && activeServer !== null ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: SshFilesPanel_default.connInfo, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.StateDot, { state: "done" }),
+            t("conn.connectedTo", { name: activeServer.name })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            import_dsh_client_ui_primitives5.Button,
+            {
+              variant: "outline",
+              size: "sm",
+              icon: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.IconPlusOutline16, {}),
+              title: t("conn.newSessionOn"),
+              onClick: () => {
+                void handleNewSessionOn(activeServer.id);
+              },
+              children: t("conn.newSessionOn")
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.Button, { variant: "outline", size: "sm", onClick: () => {
+            void handleDisconnect();
+          }, children: t("conn.disconnect") })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            import_dsh_client_ui_primitives5.Menu,
+            {
+              open: serverMenuOpen,
+              onClose: () => {
+                setServerMenuOpen(false);
+              },
+              items: serverMenuItems,
+              selectedId: selectedServer?.id,
+              onSelect: (id) => {
+                setServerMenuOpen(false);
+                setSelectedId(id);
+              },
+              align: "end",
+              portal: true,
+              anchor: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { type: "button", className: SshFilesPanel_default.serverSelect, onClick: () => {
+                setServerMenuOpen(true);
+              }, children: selectedServer?.name ?? t("conn.select") })
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+            import_dsh_client_ui_primitives5.Button,
+            {
+              variant: "primary",
+              size: "sm",
+              disabled: selectedServer === null || connectingId !== null,
+              onClick: () => {
+                if (selectedServer !== null) void handleConnect(selectedServer.id);
+              },
+              children: connectingId !== null ? t("conn.connecting") : t("conn.connect")
+            }
+          )
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+          "button",
+          {
+            type: "button",
+            className: SshFilesPanel_default.iconButton,
+            "aria-label": t("conn.manage"),
+            title: t("conn.manage"),
+            onClick: () => {
+              setManageOpen(true);
+            },
+            children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.IconSettingsOutline14, {})
+          }
+        )
+      ] })
+    ] }),
     /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: SshFilesPanel_default.body, children: [
       view === "terminal" && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
         SshTerminalView,

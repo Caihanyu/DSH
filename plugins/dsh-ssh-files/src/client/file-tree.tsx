@@ -1,15 +1,17 @@
 /**
- * FileTree: the panel's lazy, expandable directory tree. Rows load one
- * directory level at a time through the injected `list` (abort-guarded),
- * directories expand on click, files open the editor through `onOpenFile`.
- * A per-row menu offers create-in-directory and delete. A leading ".." row
- * navigates to the parent directory, so the tree is not confined to its root.
+ * FileTree: the panel's lazy directory tree, drawn with the shipped workspace
+ * tree's metrics (ui-sidebar-files): a 38px header holding the root path and
+ * its tools, one 18px-indented level per expanded directory, folder glyphs
+ * that toggle on click, and the primitives' coloured file-type icons. Rows
+ * load one directory level at a time through the injected `list`
+ * (abort-guarded); a per-row menu offers create-in-directory and delete, and
+ * the leading ".." row walks above the tree's initial root.
  */
 
 import { useMemo, useState } from 'react'
 import {
-  IconChevronDownOutline14, IconChevronRightOutline14, IconEllipsisOutline16,
-  IconFolderClose16, IconRefreshOutline14, Menu,
+  FileTypeIcon, IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16,
+  IconFolderOpenOutline16, IconRefreshOutline16, Menu, classifyFileType,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SshFileEntry, SshFilesTranslate, SshListing } from './contract.ts'
 import css from './SshFilesPanel.module.css'
@@ -30,12 +32,6 @@ export interface FileTreeProps {
   t: SshFilesTranslate
 }
 
-/** One transient open failure, with the path it applies to. */
-interface OpenFailure {
-  path: string
-  message: string
-}
-
 /** Parent of an absolute path, tolerant of both `/` and `\` separators. */
 function parentOf(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, '')
@@ -44,31 +40,24 @@ function parentOf(path: string): string {
   return trimmed.slice(0, index)
 }
 
-/** Small colored document glyph keyed by the row kind. */
-function FileGlyph({ kind }: { kind: 'dir' | 'file' }) {
-  return kind === 'dir'
-    ? <IconFolderClose16 className={css.dirGlyph} />
-    : (
-      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden className={css.fileGlyph}>
-        <path
-          d="M4 1.5h5l3.5 3.5v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z"
-          fill="var(--dsw-alias-label-tertiary, #94a3b8)" opacity="0.18"
-        />
-        <path
-          d="M4 1.5h5l3.5 3.5v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z"
-          fill="none" stroke="var(--dsw-alias-label-tertiary, #94a3b8)" strokeWidth="1.1"
-        />
-        <path d="M9 1.5v3.5h3.5" fill="none" stroke="var(--dsw-alias-label-tertiary, #94a3b8)" strokeWidth="1.1" />
-      </svg>
-    )
+/**
+ * Split a root path into the greyed directory part and the last segment, the
+ * way the pane header shows it (ui-sidebar-files `pathPartsOf`).
+ */
+function pathParts(path: string): { directory: string; name: string } {
+  const trimmed = path.replace(/[\\/]+$/, '')
+  const index = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  if (index < 0) return { directory: '', name: trimmed }
+  const name = trimmed.slice(index + 1)
+  const directory = index === 0 ? '/' : trimmed.slice(0, index + 1)
+  return { directory, name: name === '' ? trimmed : name }
 }
 
-/** The recursive row: one entry with expansion/actions. */
+/** The recursive row: one entry with its expansion and row menu. */
 function TreeRow({
-  entry, depth, list, showHidden, onOpenFile, onCreate, onDelete, t,
+  entry, list, showHidden, onOpenFile, onCreate, onDelete, t,
 }: {
   entry: SshFileEntry
-  depth: number
   list: FileTreeProps['list']
   showHidden: boolean
   onOpenFile: FileTreeProps['onOpenFile']
@@ -98,8 +87,8 @@ function TreeRow({
     try {
       const listing = await list(entry.path)
       setChildren(listing.entries)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error))
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
       setLoading(false)
     }
@@ -131,58 +120,55 @@ function TreeRow({
     : (children ?? []).filter(child => !child.hidden)
 
   return (
-    <div>
-      <div
-        className={`${css.treeRow} ${entry.kind === 'dir' ? css.treeRowDir : css.treeRowFile}`}
-        data-kind={entry.kind}
-        style={{ paddingLeft: `${8 + depth * 14}px` }}
-        role="treeitem"
-        aria-expanded={entry.kind === 'dir' ? expanded : undefined}
-      >
-        <button type="button" className={css.treeChevron} aria-hidden tabIndex={-1} onClick={() => { void toggle() }}>
+    <li className={css.item} data-ssh-entry={entry.kind}>
+      <div className={css.treeRow}>
+        <button
+          type="button"
+          className={css.treeLabel}
+          onClick={() => { void toggle() }}
+          title={entry.path}
+          aria-expanded={entry.kind === 'dir' ? expanded : undefined}
+        >
           {entry.kind === 'dir'
-            ? (loading
-                ? <span className={css.loadingDot} />
-                : expanded ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />)
-            : null}
-        </button>
-        <button type="button" className={css.treeLabel} onClick={() => { void toggle() }} title={entry.path}>
-          <FileGlyph kind={entry.kind} />
+            ? (expanded
+                ? <IconFolderOpen16 className={css.dirIcon} />
+                : <IconFolderClose16 className={css.dirIcon} />)
+            : <FileTypeIcon kind={classifyFileType(entry.name)} size={16} className={css.fileIcon} />}
           <span className={css.treeName}>{entry.name}</span>
         </button>
-        <Menu
-          open={menuOpen}
-          onClose={() => { setMenuOpen(false) }}
-          items={menuItems}
-          onSelect={onMenuSelect}
-          align="end"
-          portal
-          anchor={(
-            <button
-              type="button"
-              className={css.iconButton}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              aria-label={entry.name}
-              onClick={() => { setMenuOpen(true) }}
-            >
-              <IconEllipsisOutline16 />
-            </button>
-          )}
-        />
+        <span className={css.rowActions}>
+          <Menu
+            open={menuOpen}
+            onClose={() => { setMenuOpen(false) }}
+            items={menuItems}
+            onSelect={onMenuSelect}
+            align="end"
+            portal
+            anchor={(
+              <button
+                type="button"
+                className={css.rowAction}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-label={entry.name}
+                onClick={() => { setMenuOpen(true) }}
+              >
+                <IconEllipsisOutline16 />
+              </button>
+            )}
+          />
+        </span>
       </div>
       {expanded && (
-        <div role="group">
+        <ul className={css.level}>
+          {loading && children === null && <li className={css.note}>{t('tree.loading')}</li>}
           {error !== null && (
-            <div className={css.treeError} style={{ paddingLeft: `${24 + depth * 14}px` }}>
-              {t('tree.error')}：{error}
-            </div>
+            <li className={`${css.note} ${css.noteError}`} role="alert">{t('tree.error')}：{error}</li>
           )}
-          {visibleChildren.map(child => (
+          {children !== null && visibleChildren.map(child => (
             <TreeRow
               key={child.path}
               entry={child}
-              depth={depth + 1}
               list={list}
               showHidden={showHidden}
               onOpenFile={onOpenFile}
@@ -191,31 +177,41 @@ function TreeRow({
               t={t}
             />
           ))}
-          {visibleChildren.length === 0 && error === null && (
-            <div className={css.treeEmpty} style={{ paddingLeft: `${24 + depth * 14}px` }}>
-              {t('tree.empty')}
-            </div>
+          {children !== null && visibleChildren.length === 0 && (
+            <li className={css.note}>{t('tree.empty')}</li>
           )}
-        </div>
+        </ul>
       )}
-    </div>
+    </li>
   )
 }
 
-/** The file tree: parent row plus recursive entries under the root. */
+/** The file tree: header row, parent row, and the recursive entries. */
 export function FileTree({ root, list, onOpenFile, onCreate, onDelete, t }: FileTreeProps) {
   const [refreshKey, setRefreshKey] = useState(0)
   const [showHidden, setShowHidden] = useState(false)
   const [parentMenu, setParentMenu] = useState(false)
-  const [failure, setFailure] = useState<OpenFailure | null>(null)
 
   // The root row lives here so a refresh remounts only the top level.
   const rootEntry: SshFileEntry = { name: root, path: root, kind: 'dir', hidden: false }
   const parent = parentOf(root)
+  const { directory, name } = pathParts(root)
 
   return (
     <div className={css.treeRoot}>
       <div className={css.treeToolbar}>
+        <div className={css.treePath} title={root}>
+          {directory !== '' && <span className={css.treePathDirectory}>{directory}</span>}
+          <span className={css.treePathName}>{name}</span>
+        </div>
+        <button
+          type="button"
+          className={css.chipButton}
+          onClick={() => { setShowHidden(value => !value) }}
+          title={showHidden ? t('tree.hideHidden') : t('tree.showHidden')}
+        >
+          {showHidden ? t('tree.hideHidden') : t('tree.showHidden')}
+        </button>
         <button
           type="button"
           className={css.toolbarButton}
@@ -223,62 +219,52 @@ export function FileTree({ root, list, onOpenFile, onCreate, onDelete, t }: File
           title={t('tree.refresh')}
           aria-label={t('tree.refresh')}
         >
-          <IconRefreshOutline14 />
-        </button>
-        <button
-          type="button"
-          className={css.toolbarButton}
-          onClick={() => { setShowHidden(value => !value) }}
-          title={showHidden ? t('tree.hideHidden') : t('tree.showHidden')}
-        >
-          {showHidden ? t('tree.showHidden') : t('tree.hideHidden')}
+          <IconRefreshOutline16 />
         </button>
       </div>
-      {failure !== null && (
-        <div className={css.treeError} role="alert">
-          {t('tree.openFailed', { message: failure.message })}
-        </div>
-      )}
-      <div role="tree" aria-label={root} className={css.tree}>
-        <div className={css.treeRow} data-kind="dir" style={{ paddingLeft: '8px' }}>
-          <Menu
-            open={parentMenu}
-            onClose={() => { setParentMenu(false) }}
-            items={[
-              { id: 'new-file', label: t('tree.newFile') },
-              { id: 'new-dir', label: t('tree.newDir') },
-            ]}
-            onSelect={(id) => {
-              setParentMenu(false)
-              if (id === 'new-file') onCreate(parent, 'file')
-              if (id === 'new-dir') onCreate(parent, 'dir')
-            }}
-            align="end"
-            portal
-            anchor={(
-              <button
-                type="button"
-                className={css.treeLabel}
-                onClick={() => { setParentMenu(true) }}
-                title={t('tree.parent')}
-              >
-                <span className={css.parentLabel}>..</span>
-                <span className={css.treeName}>{t('tree.parent')}</span>
-              </button>
-            )}
+      <div className={css.tree} role="tree" aria-label={root}>
+        <ul className={css.level}>
+          <li className={css.item}>
+            <div className={css.treeRow}>
+              <Menu
+                open={parentMenu}
+                onClose={() => { setParentMenu(false) }}
+                items={[
+                  { id: 'new-file', label: t('tree.newFile') },
+                  { id: 'new-dir', label: t('tree.newDir') },
+                ]}
+                onSelect={(id) => {
+                  setParentMenu(false)
+                  if (id === 'new-file') onCreate(parent, 'file')
+                  if (id === 'new-dir') onCreate(parent, 'dir')
+                }}
+                align="end"
+                portal
+                anchor={(
+                  <button
+                    type="button"
+                    className={css.treeLabel}
+                    onClick={() => { setParentMenu(true) }}
+                    title={t('tree.parent')}
+                  >
+                    <IconFolderOpenOutline16 className={css.dirIcon} />
+                    <span className={css.treeName}>{t('tree.parent')}</span>
+                  </button>
+                )}
+              />
+            </div>
+          </li>
+          <TreeRow
+            key={`${root}-${refreshKey}`}
+            entry={rootEntry}
+            list={list}
+            showHidden={showHidden}
+            onOpenFile={onOpenFile}
+            onCreate={onCreate}
+            onDelete={onDelete}
+            t={t}
           />
-        </div>
-        <TreeRow
-          key={`${root}-${refreshKey}`}
-          entry={rootEntry}
-          depth={0}
-          list={list}
-          showHidden={showHidden}
-          onOpenFile={onOpenFile}
-          onCreate={onCreate}
-          onDelete={onDelete}
-          t={t}
-        />
+        </ul>
       </div>
     </div>
   )

@@ -1,8 +1,13 @@
 /**
  * The SSH terminal view: one xterm instance bound to the session's remote PTY
- * shell. The shell itself lives on the host and outlives this component, so
- * switching the panel back to files (or reloading the page) re-attaches to the
- * same remote session from its replay buffer.
+ * shell, dressed like the shipped terminal pane (ui-sidebar-terminal): the
+ * primitives' monospace stack at the content size, and an emulator theme read
+ * from the pane's own resolved colours, so light and dark themes follow the
+ * application instead of a fixed palette.
+ *
+ * The shell lives on the host and outlives this component, so switching the
+ * panel back to files (or reloading the page) re-attaches to the same remote
+ * session from its replay buffer.
  *
  * The stream is one long-lived NDJSON response off the plugin's own route:
  * `snapshot` resets the screen from the replay buffer, `data` appends live
@@ -69,35 +74,57 @@ function parseFrame(line: string): SshTerminalFrame | null {
 /** The panel's terminal view. */
 export function SshTerminalView(props: SshTerminalViewProps) {
   const { sessionId, connected, t, terminalStreamUrl, writeTerminal, resizeTerminal, closeTerminal } = props
-  const hostRef = useRef<HTMLDivElement | null>(null)
+  const screenRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
   const [status, setStatus] = useState<TerminalStatus>('connecting')
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
-    const host = hostRef.current
-    if (host === null || !connected) return
+    const screen = screenRef.current
+    if (screen === null || !connected) return
     setStatus('connecting')
     setError(null)
 
+    // The shipped terminal pane's emulator setup (ui-sidebar-terminal
+    // TerminalBody): same face, size, contrast floor, and scrollback.
     const term = new Terminal({
-      convertEol: false,
+      minimumContrastRatio: 4.5,
       cursorBlink: true,
-      fontFamily: 'Consolas, "Cascadia Mono", "Courier New", monospace',
       fontSize: 13,
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       scrollback: 5000,
-      theme: {
-        background: '#0b1220',
-        foreground: '#e2e8f0',
-        cursor: '#e2e8f0',
-        selectionBackground: 'rgba(148, 163, 184, 0.4)',
-      },
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
-    term.open(host)
+    term.open(screen)
+    term.textarea?.setAttribute('aria-label', t('view.terminal'))
     termRef.current = term
+
+    /** Paint the emulator with the pane's resolved colours (theme-following). */
+    const applyTheme = (): void => {
+      const element = screenRef.current
+      if (element === null) return
+      const style = getComputedStyle(element)
+      const background = style.backgroundColor
+      const foreground = style.color
+      term.options.theme = {
+        background,
+        foreground,
+        cursor: foreground,
+        cursorAccent: background,
+        selectionBackground: foreground,
+        selectionForeground: background,
+      }
+    }
+    applyTheme()
+    // The application marks dark mode on the body and follows the system
+    // preference itself, so watch both rather than guessing from a media query.
+    const themeObserver = new MutationObserver(applyTheme)
+    themeObserver.observe(document.body, { attributes: true })
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    media.addEventListener('change', applyTheme)
+
     try {
       fit.fit()
     } catch { /* the host has no measurable size yet; the observer refits */ }
@@ -182,12 +209,14 @@ export function SshTerminalView(props: SshTerminalViewProps) {
         fit.fit()
       } catch { /* transient layout states */ }
     })
-    observer.observe(host)
+    observer.observe(screen)
 
     return () => {
       disposed = true
       controller.abort()
       observer.disconnect()
+      themeObserver.disconnect()
+      media.removeEventListener('change', applyTheme)
       input.dispose()
       resize.dispose()
       term.dispose()
@@ -233,7 +262,7 @@ export function SshTerminalView(props: SshTerminalViewProps) {
         </Button>
       </div>
       {error !== null && <div className={css.errorText} role="alert">{t('term.failed', { message: error })}</div>}
-      <div className={css.terminalHost} ref={hostRef} />
+      <div className={css.terminalScreen} ref={screenRef} />
     </div>
   )
 }
