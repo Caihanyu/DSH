@@ -144,8 +144,10 @@
         toolName: subagent_fork
         backgroundMode: continuable
 
-    - id: workflow-worker-thread
-      name: '@deepseek-ai/dsh-workflow-worker-thread'
+    # 0.1.6:工作流执行器由 @deepseek-ai/dsh-workflow-worker-thread 改为
+    # @deepseek-ai/dsh-workflow-ptc(与内置标准预设的行保持一致)。
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
       config:
         provider: spawn
 
