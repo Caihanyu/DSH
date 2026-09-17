@@ -5,7 +5,7 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: |-
+    prefix: |-
       You are a helpful software engineer assistant on a Windows machine.
       Use the `pwsh` tool for shell commands; the persistent `bash` terminal is unavailable on Windows.
       Use `str_replace_editor` to read and edit files; it requires absolute Windows paths such as `D:\some\dir\file.txt`.

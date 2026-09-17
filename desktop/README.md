@@ -28,7 +28,8 @@ BaseWindow(无边框)
 └── 视图 2:appView   http://127.0.0.1:3080    → Harness 界面
 ```
 
-- 服务生命周期:`main.js` 检测 3080 端口 → 未监听则用 `node node_modules\@deepseek-ai\dsh\lib\bin.js web --no-open` 拉起(`windowsHide: true`,无窗口),日志追加写入仓库根目录的 `server.log` / `server.log.err`。
+- 服务生命周期:`main.js` 检测 3080 端口 → 未监听则用 `node <dsh 入口> web --no-open` 拉起(`windowsHide: true`,无窗口),日志追加写入安装目录的 `server.log` / `server.log.err`。入口按两种布局依次探测:`node_modules\@deepseek-ai\dsh\lib\bin.js`(npm 安装版)与 `apps\cli\lib\bin.js`(源码仓库 `pnpm run build` 产物)。
+- 代理:进程环境未设 `HTTP_PROXY`/`HTTPS_PROXY` 时,依次探测 `127.0.0.1:7890`、`7897`,选在监听的那个;可用 `DSH_PROXY` 直接指定。
 - 服务以 `detached` 方式启动,**关闭应用后服务继续运行**;需要停掉时用标题栏的刷新按钮重启即可。
 - 启动中/重启中/连接失败时,内容区显示带进度的占位页;失败会提示错误原因。
 - 标题栏配色跟随 Harness 页面主题(在页面加载完成、窗口重新获得焦点时同步一次)。

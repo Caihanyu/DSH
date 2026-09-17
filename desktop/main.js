@@ -21,7 +21,11 @@ const PORT = 3080;
 const APP_URL = `http://127.0.0.1:${PORT}`;
 const TITLEBAR_HEIGHT = 38;
 
-const DSH_BIN = path.join(ROOT, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js');
+const DSH_BIN_CANDIDATES = [
+  path.join(ROOT, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'), // npm 安装版
+  path.join(ROOT, 'apps', 'cli', 'lib', 'bin.js'),                          // 源码仓库构建版
+];
+const DSH_BIN = DSH_BIN_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ?? DSH_BIN_CANDIDATES[0];
 const LOG_FILE = path.join(ROOT, 'server.log');
 const ERR_FILE = path.join(ROOT, 'server.log.err');
 const ICON_ICO = path.join(__dirname, 'assets', 'harness.ico');
@@ -40,8 +44,38 @@ function trace(message) {
 }
 trace('main.js loaded');
 
-// 系统代理(与 launch-server.ps1 保持一致),按需修改
-const DEFAULT_PROXY = 'http://127.0.0.1:7897';
+// 系统代理(与 launch-server.ps1 保持一致):优先沿用进程环境,否则在常见
+// Clash 端口里探测一个正在监听的;都没有时退回候选列表第一项。
+// 换代理软件只需改 PROXY_CANDIDATES(或设 DSH_PROXY 环境变量)。
+const PROXY_CANDIDATES = [
+  ...(process.env.DSH_PROXY ? [process.env.DSH_PROXY] : []),
+  'http://127.0.0.1:7890',
+  'http://127.0.0.1:7897',
+];
+
+/** 本机某 TCP 端口是否有进程在监听(单次探测有超时上限)。 */
+function portListening(port, timeoutMs = 150) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: '127.0.0.1', port });
+    const done = (result) => { socket.destroy(); resolve(result); };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => done(true));
+    socket.once('timeout', () => done(false));
+    socket.once('error', () => done(false));
+  });
+}
+
+/**
+ * 选中一个可用的本机代理。
+ * @returns 代理 URL。
+ */
+async function pickProxyUrl() {
+  for (const candidate of PROXY_CANDIDATES) {
+    const port = Number(new URL(candidate).port);
+    if (Number.isInteger(port) && port > 0 && await portListening(port)) return candidate;
+  }
+  return PROXY_CANDIDATES[0];
+}
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -103,14 +137,17 @@ function listenerPids(port) {
  * 服务生命周期
  * ------------------------------------------------------------------ */
 
-function startServer() {
+async function startServer() {
   const nodeExe = findNodeExe();
   if (!nodeExe) throw new Error('未找到 node.exe,请确认 Node.js 已加入 PATH');
   if (!fs.existsSync(DSH_BIN)) throw new Error(`未找到 dsh 入口: ${DSH_BIN}`);
 
   const env = { ...process.env };
-  if (!env.HTTP_PROXY && !env.http_proxy) env.HTTP_PROXY = DEFAULT_PROXY;
-  if (!env.HTTPS_PROXY && !env.https_proxy) env.HTTPS_PROXY = DEFAULT_PROXY;
+  if (!env.HTTP_PROXY && !env.http_proxy) {
+    const proxy = await pickProxyUrl();
+    env.HTTP_PROXY = proxy;
+    env.HTTPS_PROXY = proxy;
+  }
 
   const out = fs.openSync(LOG_FILE, 'a');
   const err = fs.openSync(ERR_FILE, 'a');
@@ -248,7 +285,7 @@ async function waitForNewToken(offset, timeoutMs = 30_000) {
 /** 确保服务在运行;返回本次是否启动了服务 */
 async function ensureServer() {
   if (await canConnect(PORT)) return false;
-  startServer();
+  await startServer();
   if (!(await waitForServer())) {
     throw new Error('服务启动超时,请查看 server.log');
   }
@@ -545,7 +582,7 @@ async function restartHarness() {
   const offset = launchLogOffset();
   try {
     await stopServer();
-    startServer();
+    await startServer();
     if (!(await waitForHttpReady())) throw new Error('服务重启超时,请查看 server.log');
     const token = await waitForNewToken(offset, 30_000);
     trace(`restart: 新 token ${token === null ? '未出现(继续尽力加载)' : '已就绪'}`);

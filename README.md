@@ -118,6 +118,13 @@ BaseWindow(无边框)
   在 `settings.yaml` 的 `agent-presets.default` 中引用。
   注意 `dsh-anchored-subagent` 插件会把它自带的预设安装/覆盖到该目录,
   覆盖后需重做 Windows 适配(pwsh 替换 bash)。
+  两个预设均已适配 0.1.6:`dsh-persona` 的 `text` 字段更名为必填的 `prefix`;
+  `tool-bootstrap.mjs` 用 `snapshotEvents()` 读取会话事件(0.1.2 起
+  `session.events` 已不存在)。
+- `profile-web/cordis.patch.yml` → `~/.dsh/profiles/web/cordis.patch.yml` —
+  web profile 的补丁层,在所有 bundle 层之后应用。当前只覆盖
+  `workspace-files-tab` 的打开方式路径(MarkText 不在 PATH),ssh-files
+  沿用 bundle 补丁默认上限。
 
 > 本仓库**不含**任何敏感数据:`~/.dsh/.credentials.yaml`(API 密钥)、
 > `~/.dsh/sessions/`(会话记录)、`~/.dsh/storages/`、`~/.dsh/ssh-files/state.json`
@@ -126,8 +133,11 @@ BaseWindow(无边框)
 ## scripts/ — 启动脚本(Windows)
 
 **复制到你的 DSH 安装目录**(与 `desktop/`、`node_modules/` 同级)后使用;脚本按
-`$PSScriptRoot` 定位安装目录。脚本内写死本机代理 `127.0.0.1:7897`(Clash),
-按需修改。文件需保持 **UTF-8 with BOM**(PowerShell 5.1 无 BOM 会按 GBK 解析导致乱码)。
+`$PSScriptRoot` 定位安装目录。两种安装布局都支持:npm 安装版
+(`node_modules/@deepseek-ai/dsh/lib/bin.js`)与源码仓库构建版(`apps/cli/lib/bin.js`)。
+代理端口自动探测:`7890` / `7897` 哪个在监听就用哪个,都不在时保持不设置;
+也可用 `DSH_PROXY` 环境变量直接指定。文件需保持 **UTF-8 with BOM**
+(PowerShell 5.1 无 BOM 会按 GBK 解析导致乱码)。
 
 - `launch-server.ps1` — 无窗口后台启动 `dsh web`(端口 3080),日志写 `server.log`;
   带 60 秒就绪等待与失败日志(适合开机自启)。
@@ -137,6 +147,12 @@ BaseWindow(无边框)
 ## 说明
 
 - 插件源码最初在 DSH 主仓库 `packages/extensions/` 下开发(未跟踪状态),
-  本仓库为独立备份/分享副本。
-- 若使用 junction 安装插件,注意 `lib/` 需与主仓库中的 peer 依赖(如
-  `@deepseek-ai/dsh-client-runtime`)版本匹配;升级 harness 后建议重新构建。
+  本仓库为独立备份/分享副本。0.1.6 起插件改为独立包:宿主端打包成自含的
+  `lib/index.js`,浏览器端产出闭包 bundle,运行期只依赖 profile 已装的
+  harness 包与平台模块表。
+- profile 以 `file:` 方式安装,装的是拷贝;升级 harness 后重跑
+  `scripts/deploy-plugin.ps1`(或重新 `dsh plugin --profile web add`)即可。
+- profile 安装报 `ERR_PNPM_IGNORED_BUILDS` 时,在
+  `~/.dsh/profiles/web/pnpm-workspace.yaml` 写
+  `allowBuilds: {cpu-features: false, ssh2: false}`(ssh2 的可选原生绑定,
+  纯 JS 回退即可),再重跑安装。

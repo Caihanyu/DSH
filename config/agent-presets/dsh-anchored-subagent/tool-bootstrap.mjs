@@ -86,10 +86,28 @@ function parseConfig(source) {
   }
 }
 
+/**
+ * Every event currently in the Session log, across the DSH versions this
+ * preset supports. DSH 0.1.2 replaced `session.events` with on-demand readers;
+ * `snapshotEvents()` still returns the current full snapshot (0.1.6 deprecates
+ * it for repository code only, not for profile presets).
+ */
+function sessionEvents(session) {
+  if (Array.isArray(session?.events)) return session.events
+  if (typeof session?.snapshotEvents === 'function') {
+    try {
+      return session.snapshotEvents()
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
 /** True once the session has a durable promotion signal. */
 function isPromoted(agent, promoteOn) {
   const types = PROMOTE_EVENTS[promoteOn] ?? PROMOTE_EVENTS.either
-  const events = agent?.session?.events
+  const events = sessionEvents(agent?.session)
   if (!Array.isArray(events)) return false
   return events.some((event) => types.includes(event?.type))
 }
@@ -112,9 +130,13 @@ function restoreChildPersona(agent, warnOnce) {
   const persona = store.get(String(sessionId))
   if (persona === undefined) return
   try {
-    agent.ctx?.systemPrompt?.section({
-      name: 'deployment:persona',
-      order: 0,
+    // 0.1.5 renamed the persona section into a prefix/suffix pair; fall back to
+    // the legacy name for older hosts that lack the resolver.
+    const systemPrompt = agent.ctx?.systemPrompt
+    const order = systemPrompt?.getSectionOrder?.('DEPLOYMENT_PERSONA_PREFIX')
+    systemPrompt?.section({
+      name: order === undefined ? 'deployment:persona' : 'deployment:persona-prefix',
+      order: order ?? 0,
       text: persona,
     })
     restoredPersonas.add(sessionId)

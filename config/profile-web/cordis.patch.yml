@@ -1,0 +1,16 @@
+# Your patch layer for this dsh profile, applied after every bundle layer:
+# a top-level YAML array of loader patch entries (id-targeted config
+# overrides, disables, and insert lists; `!!js` expressions allowed).
+
+# dsh-workspace-files:MarkText 不在 PATH,给出完整可执行文件路径。
+# 注意:config 是整体替换,故同时重申 code 与 typora 的默认值。
+# 0.1.6 起插件的 loader 条目 id 为 workspace-files-tab(内置组合里已有同名
+# workspace-files 条目,用于 api-workspace-files remote)。
+- id: workspace-files-tab
+  config:
+    code: code
+    typora: typora
+    marktext: 'D:\marktext\marktext.exe'
+
+# dsh-ssh-files:沿用 bundle 补丁中的默认上限,无需覆盖;
+# 面板在 0.1.6 已不再提供本地模式,本地文件由内置工作区文件树承担。

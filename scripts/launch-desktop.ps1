@@ -12,9 +12,18 @@ $url = "http://127.0.0.1:$port"
 
 # 刷新 PATH,确保 node 可用(旧终端会话可能没有更新后的 PATH)
 $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path', 'User')
-# 走系统代理(Clash @ 127.0.0.1:7897),不设置时 GitHub 等域名可能不通
-$env:HTTP_PROXY = 'http://127.0.0.1:7897'
-$env:HTTPS_PROXY = 'http://127.0.0.1:7897'
+# 走系统代理:探测常见 Clash 端口(7890/7897),不设置时 GitHub 等域名可能不通
+# (可用 DSH_PROXY 环境变量直接指定)
+if ($env:DSH_PROXY) {
+    $env:HTTP_PROXY = $env:DSH_PROXY
+    $env:HTTPS_PROXY = $env:DSH_PROXY
+} else {
+    $proxyPort = @(7890, 7897) | Where-Object { Get-NetTCPConnection -LocalPort $_ -State Listen -ErrorAction SilentlyContinue } | Select-Object -First 1
+    if ($proxyPort) {
+        $env:HTTP_PROXY = "http://127.0.0.1:$proxyPort"
+        $env:HTTPS_PROXY = "http://127.0.0.1:$proxyPort"
+    }
+}
 
 # ---------- 1) Electron 桌面外壳(首选) ----------
 $desktopApp = Join-Path $repo 'desktop'
@@ -39,7 +48,7 @@ if (-not $isRunning) {
         if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) { $ready = $true; break }
     }
     if (-not $ready) {
-        [System.Windows.Forms.MessageBox]::Show('DeepSeek Harness 服务启动超时,请打开终端手动运行:node node_modules\@deepseek-ai\dsh\lib\bin.js web', '启动失败')
+        [System.Windows.Forms.MessageBox]::Show('DeepSeek Harness 服务启动超时,请尝试重新运行本脚本,或手动运行 launch-server.ps1 后查看 server.log', '启动失败')
         exit 1
     }
 }
